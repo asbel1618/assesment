@@ -1,3 +1,10 @@
+# TDLR if you are a human
+## To run the project
+```bash
+$ docker compose up -d --build
+# open http://127.0.0.1:8000/ui in browser
+```
+
 # Natural-language orders API
 
 Ask a question about sales in plain English; a local LLM writes the SQL, a validator checks it, and PostgreSQL runs it as a read-only role.
