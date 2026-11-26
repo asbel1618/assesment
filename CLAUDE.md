@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## HARD UNBREACKABLE Constraints
-1- Never read the files inside @conversations/
+1- Never read the files inside @conversations/ and @orders_sample_file.csv.
 
 ## What this is
 
@@ -30,6 +30,7 @@ Tooling is `uv` + `pytest` + `ruff` (none declared yet; same rule applies — pr
 
 ```
 uv run fastapi dev main.py          # run API (requires fastapi[standard])
+uv run python -m scripts.generate_orders   # scripts run as modules (they import app/); NOT `python scripts/x.py`
 uv run pytest                       # all tests
 uv run pytest path/to/test.py::test_name   # single test
 uv run ruff check . && uv run ruff format .
