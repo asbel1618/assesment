@@ -23,15 +23,23 @@ INSERT_SQL = text(
 )
 
 
+class EmptyLoadError(Exception):
+    """Nothing survived cleaning; loading would truncate ``orders`` for no data."""
+
+
 def load_clean_orders(engine: Engine, clean: pd.DataFrame) -> int:
-    """Replace the contents of ``orders`` in one transaction; return the row count."""
+    """Replace the contents of ``orders`` in one transaction; return the row count.
+
+    Raises ``EmptyLoadError`` before touching the database if ``clean`` is empty.
+    """
+    if clean.empty:
+        raise EmptyLoadError("no valid rows to load; refusing to truncate orders")
     with engine.begin() as conn:
         conn.execute(text(SCHEMA_SQL.read_text(encoding="utf-8")))
         conn.execute(text(VIEWS_SQL.read_text(encoding="utf-8")))
         # TRUNCATE (not DROP) so dependent views (step 4) survive reloads.
         conn.execute(text("TRUNCATE orders RESTART IDENTITY"))
-        if not clean.empty:
-            conn.execute(INSERT_SQL, clean.to_dict("records"))
+        conn.execute(INSERT_SQL, clean.to_dict("records"))
         loaded = conn.execute(text("SELECT count(*) FROM orders")).scalar_one()
         if loaded != len(clean):
             raise RuntimeError(f"loaded {loaded} rows, expected {len(clean)}")
@@ -52,13 +60,19 @@ def main(argv: Sequence[str] | None = None) -> None:
     args.rejects.parent.mkdir(parents=True, exist_ok=True)
     rejects.to_csv(args.rejects, index=False)
 
-    loaded = load_clean_orders(create_engine_from_env("DATABASE_URL"), clean)
+    try:
+        loaded = load_clean_orders(create_engine_from_env("DATABASE_URL"), clean)
+    except EmptyLoadError as exc:
+        raise SystemExit(
+            f"error: {exc} (read {len(raw)}, rejected {len(rejects)})"
+        ) from exc
 
     print(f"read:     {len(raw)}")
     print(f"rejected: {len(rejects)} -> {args.rejects}")
-    by_reason = rejects["reason"].str.split(";").explode().value_counts()
-    for reason, count in by_reason.items():
-        print(f"  {reason}: {count}")
+    if not rejects.empty:  # an empty frame has no string column to split
+        by_reason = rejects["reason"].str.split(";").explode().value_counts()
+        for reason, count in by_reason.items():
+            print(f"  {reason}: {count}")
     print(f"loaded:   {loaded}")
 
 
