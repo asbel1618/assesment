@@ -1,0 +1,381 @@
+ ▐▛███▛█   Claude Code v2.1.332
+▝▜██████▀  Sonnet 5.5 · Claude Pro
+ ▝▝   ▝▝   ~/projects/test/coding_assesment
+
+
+❯ Givem the Claude.md and the assessment:                                       
+  <context>The assessment looks like this:</context>                            
+                                                                                
+  <assessment>                                                                  
+  Build a small Python project with order data.                                 
+                                                                                
+  Data loading: Generate a CSV of at least 1,000 orders (date, customer,        
+  country, product, amount, and status) with some deliberate errors:            
+  duplicates, misspelled dates, and empty amounts. Write a script that cleans   
+  it and saves it to PostgreSQL, SQLite, or DuckDB.                             
+  Models: Two SQL views: sales by month and country, and the top 10 customers   
+  by purchases.                                                                 
+  API with FastAPI (required): An endpoint that receives a natural-language     
+  question, for example "how much did we sell in Spain in March?", uses an LLM  
+  to convert it into a query, validates it before running it (read-only and     
+  only allowed tables), and returns the result. If the LLM fails or returns     
+  something invalid, respond with a clear error.                                
+  Tests: At least 3 tests with pytest: the cleaning, the query validation, and  
+  the endpoint with the LLM mocked.                                             
+  README: How to run it, the decisions you made, what you would do with more    
+  time, and how you used AI (what you asked it, what you accepted, and what you 
+  corrected).                                                                   
+                                                                                
+  You can use whichever LLM you like (OpenAI, Claude, Gemini, or a local one),  
+  but do not commit your API key to the repository.                             
+                                                                                
+  Make commits as you go, so your progress and your thinking are visible; a     
+  single commit with everything doesn't count.                                  
+  </assessment>                                                                 
+  Let's:                                                                        
+  1- Understand the assessment, it's requirements and objectives.               
+  2- How does the end product looks like.                                       
+  3- Which steps do we need to get there.                                       
+
+● 1. Assessment
+
+  Goal: a small, readable, tested Python project. Reviewers are checking
+  engineering judgment: validation, safety, tests, commit history, honest AI-use
+  disclosure. They are not checking feature volume.
+
+  ┌─────┬────────────────────────────────────┬──────────────────────────────┐
+  │  #  │            Requirement             │      Acceptance signal       │
+  ├─────┼────────────────────────────────────┼──────────────────────────────┤
+  │     │ Generate CSV, ≥1,000 rows (date,   │ Script is deterministic      │
+  │ 1   │ customer, country, product,        │ (seeded) and defects are     │
+  │     │ amount, status) with duplicates,   │ measurable                   │
+  │     │ bad dates, empty amounts           │                              │
+  ├─────┼────────────────────────────────────┼──────────────────────────────┤
+  │ 2   │ Clean the CSV and load it into     │ Idempotent; the cleaning     │
+  │     │ SQLite                             │ function is importable       │
+  ├─────┼────────────────────────────────────┼──────────────────────────────┤
+  │ 3   │ Two views: sales by month and      │ Defined in SQL, queryable    │
+  │     │ country; top 10 customers          │                              │
+  ├─────┼────────────────────────────────────┼──────────────────────────────┤
+  │     │ FastAPI endpoint: question → LLM → │ Read-only, allowlist-only;   │
+  │ 4   │  SQL → validate → execute → result │ LLM failure or invalid       │
+  │     │                                    │ output returns a clear error │
+  ├─────┼────────────────────────────────────┼──────────────────────────────┤
+  │     │ pytest, ≥3 tests: cleaning,        │                              │
+  │ 5   │ validation, endpoint with mocked   │ No network in tests          │
+  │     │ LLM                                │                              │
+  ├─────┼────────────────────────────────────┼──────────────────────────────┤
+  │     │ README: run instructions,          │ AI usage section states what │
+  │ 6   │ decisions, "with more time", AI    │  was asked, accepted and     │
+  │     │ usage                              │ corrected                    │
+  ├─────┼────────────────────────────────────┼──────────────────────────────┤
+  │     │ No API key in the repo;            │ .env is gitignored           │
+  │ 7   │ incremental commits                │ (currently missing); the     │
+  │     │                                    │ history shows the thinking   │
+  └─────┴────────────────────────────────────┴──────────────────────────────┘
+
+  Hidden criteria: the validator must hold regardless of what the LLM returns.
+  The README must be candid about AI corrections, so keep notes as you go.
+
+  2. End product
+
+  .
+  ├── README.md  .gitignore  .env.example  pyproject.toml
+  ├── main.py                      # thin entrypoint → app factory
+  ├── app/
+  │   ├── routers/query.py         # POST /query, error mapping
+  │   ├── services/query_service.py# question → LLM → validate → execute
+  │   ├── llm/{base.py,client.py}  # LLMClient protocol + real provider impl
+  │   ├── validator.py             # pure: SELECT-only, single stmt, allowlist
+  │   ├── db/{connection.py,views.sql,repository.py}  # read-only conn
+  │   └── schemas.py               # Pydantic request/response/error
+  ├── scripts/{generate_orders.py,load_orders.py}
+  ├── data/                        # orders_raw.csv, orders.db (gitignored or 
+  generated)
+  └── tests/{test_cleaning.py,test_validator.py,test_api.py}
+
+  Behavior:
+  - uv run python scripts/generate_orders.py writes a dirty CSV.
+  - uv run python scripts/load_orders.py cleans it and builds the orders table
+    and 2 views. Re-running does not duplicate rows.
+  - POST /query {"question": "how much did we sell in Spain in March?"} returns
+    {question, sql, columns, rows}.
+  - Error responses:
+    - 422 for a bad request.
+    - 400 when the LLM output fails validation.
+    - 502 or 503 when the LLM call fails.
+  - uv run pytest passes offline.
+
+  3. Steps
+
+  Each step is one or two focused commits.
+
+  Step: 0
+  Work: git init, .gitignore (.env, *.db, .venv), .env.example. You run uv add
+    fastapi[standard] sqlalchemy <llm-sdk> and uv add --dev pytest ruff httpx.
+  Commit: chore: init repo, gitignore, deps
+  ────────────────────────────────────────
+  Step: 1
+  Work: generate_orders.py: seeded, ~1,100 rows. Inject duplicates, 3–4
+    malformed date formats or typos, and empty or garbage amounts. Also inject
+    inconsistent country casing, whitespace and invalid status values.
+  Commit: feat: dirty orders CSV generator
+  ────────────────────────────────────────
+  Step: 2
+  Work: clean_orders(df) as a pure function: dedupe, parse dates (drop or flag
+    unparseable), coerce amounts, normalize text. Then write test_cleaning.py
+    first (TDD).
+  Commit: feat: cleaning logic + tests
+  ────────────────────────────────────────
+  Step: 3
+  Work: load_orders.py: read, clean, write SQLite (replace table, so it is
+    idempotent). Log counts dropped per defect type.
+  Commit: feat: load cleaned orders into SQLite
+  ────────────────────────────────────────
+  Step: 4
+  Work: views.sql: v_sales_by_month_country (strftime('%Y-%m')) and
+    v_top_customers (LIMIT 10). Apply them in the loader.
+  Commit: feat: sales and top-customer views
+  ────────────────────────────────────────
+  Step: 5
+  Work: validator.py: parse with sqlglot or a conservative tokenizer. Reject
+    non-SELECT, multiple statements, comments or pragmas, and tables outside
+    {orders, v_*}. Then write test_validator.py with adversarial cases (DROP,
+    ; stacking, CTE hiding a table, sqlite_master).
+  Commit: feat: SQL validator + tests
+  ────────────────────────────────────────
+  Step: 6
+  Work: LLMClient protocol and the real implementation. The prompt contains
+    only the allowed schema, SQLite dialect and "return SQL only". Strip code
+    fences. Read the key from the environment.
+  Commit: feat: LLM client behind interface
+  ────────────────────────────────────────
+  Step: 7
+  Work: Read-only SQLite connection (mode=ro URI), row limit and timeout. Add
+    query_service and the /query router with typed errors.
+  Commit: feat: /query endpoint
+  ────────────────────────────────────────
+  Step: 8
+  Work: test_api.py: inject a fake LLM through FastAPI dependency_overrides.
+    Cover the happy path, an invalid-SQL LLM response, an LLM exception, and
+    an empty question.
+  Commit: test: endpoint with mocked LLM
+  ────────────────────────────────────────
+  Step: 9
+  Work: README: run steps, decisions, "with more time", AI log. Run ruff check
+    and ruff format.
+  Commit: docs: README
+
+  Decisions I need from you
+
+  1. LLM provider. I recommend Claude via the anthropic SDK, with model ID
+     claude-haiku-5-5 for cost. It needs ANTHROPIC_API_KEY.
+  2. Validator parser. I recommend sqlglot because it gives real AST-based table
+     extraction. It adds one dependency. The alternative is regex or tokenizer
+     logic with no dependency, which is weaker.
+  3. ORM scope. I recommend using SQLAlchemy only for engine and connection
+     management and keeping raw SQL for views and queries. This matches the
+     minimal-dependency constraint. The alternative is stdlib sqlite3 only,
+     which is lighter.
+
+  I'll proceed with these defaults. Step 0 starts once you run the uv add
+  commands, which I'll provide.
+
+✻ Baked for 19s · done 1:14 PM
+
+❯ About your questions:                                                         
+  Q: LLM provider. I recommend Claude via the anthropic SDK, with model ID      
+  claude-haiku-5-5 for cost. It needs ANTHROPIC_API_KEY.                        
+  A: The LLM provider will be the service defined in @docker-compose.yaml, a    
+  custom container with a local model.                                          
+                                                                                
+  Q: Validator parser. I recommend sqlglot because it gives real AST-based      
+  table extraction. It adds one dependency. The alternative is regex or         
+  tokenizer logic with no dependency, which is weaker.                          
+  A: Let's do that.                                                             
+                                                                                
+  Q: ORM scope. I recommend using SQLAlchemy only for engine and connection     
+  management and keeping raw SQL for views and queries. This matches the        
+  minimal-dependency constraint. The alternative is stdlib sqlite3 only, which  
+  is lighter.                                                                   
+  A: Yes., SQLAlchemy is a good option.                                         
+                                                                                
+  Write the plan somewhere we can reffer later like PLAN.md, don't apply andy   
+  of                                                                            
+  the planning jet.                                                             
+
+  Searched for 1 pattern, listed 1 directory (ctrl+o to expand)
+
+● Write(PLAN.md)
+  ⎿  Wrote 101 lines to PLAN.md
+       1 # PLAN
+       2 
+       3 Working plan for the take-home assessment. Status: **planned, no
+         thing applied**.
+       4 Update the checkboxes as steps land.
+       5 
+       6 ## 1. Requirements
+       7 
+       8 | # | Requirement | Acceptance signal |
+       9 |---|---|---|
+     … +92 lines (ctrl+o to expand)
+
+● I wrote the plan to /home/asbel/projects/test/coding_assesment/PLAN.md. I only
+  read files and wrote that one file; nothing else is applied.
+
+  What changed from your answers:
+  - LLM: the llm service in docker-compose.yml runs llama.cpp serving Qwen3.5-9B
+    through an OpenAI-compatible API. The client will be a plain httpx call to
+    /v1/chat/completions, behind an LLMClient protocol. The base URL comes from
+    LLM_BASE_URL, and there is no API key.
+  - Validator: the plan uses sqlglot.
+  - Database access: SQLAlchemy is used for connections only. Views and queries
+    stay raw SQL.
+  - Dependencies: the plan lists the exact uv add commands for you to run, and I
+    didn't touch pyproject.toml. pandas is marked optional, to be decided at
+    the cleaning step.
+
+  Things to check early:
+  - Qwen3.5 may return reasoning output. I need to confirm the response shape
+    from the server and strip or disable it.
+  - A 9B model may write weak SQL. The plan mitigates this with a schema-only
+    prompt, few-shot examples and temperature=0.
+
+  Open points (also in §7 of the plan):
+  - The git repo is coding_assesment/, but CLAUDE.md and docker-compose.yml sit
+    one level up. I need to know whether the compose file should be copied into
+    the repo for reviewers.
+  - I need to know whether the API should also run as a compose service or only
+    locally.
+
+✻ Cogitated for 28s · done 1:28 PM
+
+❯ Yes the api will run as part of the docker compose. And I just moved the git  
+  repo one step up too, if it introduces any problem or inconsistency fix it.   
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● The git move left two inconsistencies, and I fixed them in PLAN.md. I didn't
+  move any project files.
+
+  What I found:
+  - Repo root: .git is now at test/, and it has no commits yet. CLAUDE.md and
+    docker-compose.yml are now inside the repo, untracked. The Python project is
+    still in coding_assesment/.
+  - Plan layout: it assumed coding_assesment/ was the repo root, so the layout,
+    .gitignore location and compose references were wrong.
+  - .gitignore: the only one is coding_assesment/.gitignore. It covers Python
+    and .venv only, so .env and *.db aren't ignored yet.
+
+  What changed in PLAN.md:
+  - §3 now shows test/ as the git root and coding_assesment/ as the uv project.
+    uv, pytest and ruff commands run from coding_assesment/.
+  - Step 0 adds a root .gitignore (.env, *.db, data/) and tracks CLAUDE.md and
+    docker-compose.yml in the first commit.
+  - New step 9 containerizes the API, and docs and lint become step 10.
+    - It adds a Dockerfile in coding_assesment/.
+    - It adds an api service to docker-compose.yml.
+    - That service uses depends_on: llm: service_healthy,
+      LLM_BASE_URL=http://llm:8080/v1, a volume for the DB, and port
+      127.0.0.1:8000.
+  - §7 records two caveats:
+    - The compose file hardcodes host-specific values (/home/asbel/models, GIDs
+      987 and 983, the Intel GPU image), so reviewers can't run it as-is. The
+      README should document this, or the values should be parameterized.
+    - CLAUDE.md commands are written as if run from the repo root. I left that
+      file untouched, and they now apply from coding_assesment/.
+
+  If you'd rather flatten coding_assesment/ into the repo root so the CLAUDE.md
+  commands match exactly, say so and I'll do it.
+
+✻ Brewed for 22s · done 1:31 PM
+
+❯ Modify the plan.md and the claude.md to reflect we'll be using a postgresql   
+  image as the db. So we'll need to modify the docker-compose to add the        
+  postgresql and the libraries that coding_assessment uses.                     
+
+  Ran 4 shell commands (ctrl+o to expand)
+
+● I changed PLAN.md, CLAUDE.md and docker-compose.yml for PostgreSQL. docker 
+  compose config accepts the new compose file when POSTGRES_PASSWORD is set.
+  grep finds no SQLite references left in either doc. I haven't started the
+  stack.
+
+  docker-compose.yml
+  - I added a db service on postgres:17-alpine.
+    - It uses a pgdata named volume and a pg_isready healthcheck.
+    - It is exposed on 127.0.0.1:5432 and joins the backend network.
+  - POSTGRES_PASSWORD is required from a root .env, and compose errors out if
+    it's missing. POSTGRES_USER and POSTGRES_DB default to orders.
+  - I did not add the api service yet. It needs the Dockerfile from step 9, and
+    a service pointing at a missing build would break docker compose. The
+    depends_on hint comment now includes db.
+
+  PLAN.md
+  - The database is now PostgreSQL, using psycopg[binary] and the
+    postgresql+psycopg:// SQLAlchemy URL.
+  - A new app_ro role is SELECT-only on the allowed tables and views. It is set
+    to default_transaction_read_only and has a statement_timeout, and an init
+    script in docker/postgres/init/ creates it.
+  - Validator:
+    - It runs sqlglot in the postgres dialect.
+    - It also blocks pg_catalog, information_schema, schema-qualified names,
+      INTO and FOR UPDATE.
+    - It blocks dangerous functions like pg_read_file, set_config and pg_sleep.
+  - Views use to_char(order_date,'YYYY-MM'). Step 3 is now "DB + loader".
+  - The endpoint test overrides both the LLM and the repository, so it needs no
+    Postgres.
+  - Step 9's api service will depend on both llm and db being healthy.
+  - The uv add command now includes "psycopg[binary]".
+
+  CLAUDE.md
+  - It covers PostgreSQL, the local LLM, the read-only role, and the repo layout
+    (commands run from coding_assesment/).
+  - It has a new Infrastructure section describing the compose services and
+    commands.
+
+  Needs your action: create a root .env with at least POSTGRES_PASSWORD before
+  docker compose up. .env isn't gitignored yet; that is step 0.
+
+✻ Cooked for 49s · done 5:09 PM
+
+❯ Check the @coding_assesment/PLAN.md and the list of steps. Ensure a new agent 
+  knows what to do and why.                                                     
+  ⎿  Read coding_assesment/PLAN.md (115 lines)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I rewrote PLAN.md so an agent starting cold can pick up the work. I added a
+  handoff section and a Why and Done when line to each of the 11 steps. Nothing
+  was implemented or committed.
+
+  What I added:
+  - Handoff (§0):
+    - What the assessment is graded on.
+    - The current repo state: stub main.py, no commits, and llm and db already
+      in compose.
+    - Working rules: one step at a time, TDD for steps 2 and 5, and the
+      CLAUDE.md hard rules (no pyproject.toml edits, commit only when asked).
+    - Which directory each command runs from.
+  - Data contract (§0): the orders table and the two views' columns, the
+    injected defects, the cleaning policy, and an env-var table with the
+    host-versus-container URL differences.
+  - Per-step guidance: each step now gives its reason and a checkable exit
+    criterion, such as "loader run twice gives the same row count" and "app_ro
+    can SELECT but INSERT and DROP fail". Step 3 also records two Postgres
+    traps:
+    - Init scripts only run on an empty volume, so re-running needs docker 
+      compose down -v.
+    - ALTER DEFAULT PRIVILEGES must be FOR ROLE <owner>.
+  - AI log (§8): a table to append to, seeded with the planning decisions.
+
+  Defaults I chose that you may want to change:
+  - Data and definitions:
+    - Data covers 2025 only, so "March" is unambiguous.
+    - "Sales" means status = 'completed'.
+    - The statuses are completed, pending, cancelled and refunded.
+  - Cleaning policy: unparseable dates, empty amounts and invalid statuses are
+    rejected, with no imputation. Rejected rows are written to
+    data/rejected_orders.csv with a reason.
+
+✻ Brewed for 44s · done 5:15 PM

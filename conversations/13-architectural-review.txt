@@ -1,0 +1,655 @@
+ ▐▛███▛█   Claude Code v2.1.332
+▝▜██████▀  Sonnet 5.5 · Claude Pro
+ ▝▝   ▝▝   ~/projects/test/coding_assesment
+
+
+❯ /clear                                                                        
+
+❯ /effort                                                                       
+  ⎿  Cancelled
+
+❯ ● You are a senior software architect auditing a Python layered backend for   
+    dependency direction and boundary integrity. The project is a FastAPI,      
+    SQLAlchemy, psycopg 3 and PostgreSQL service. It turns a natural-language   
+    question into SQL through a local OpenAI-compatible LLM (llama.cpp),        
+  validates                                                                     
+    the SQL, runs it read-only, and returns the result. It also has standalone  
+  data                                                                          
+    scripts (generate orders CSV, clean and load). The code root is             
+  coding_assesment/                                                             
+    (Python 3.14, uv).                                                          
+                                                                                
+    HARD CONSTRAINTS                                                            
+    - This is a read-only review. Do not modify, create or delete any project   
+  file.                                                                         
+      Do not touch pyproject.toml or lockfiles. Do not commit. Do not run       
+  installs.                                                                     
+      If a tool would help, give the exact "uv add --dev ..." command as a      
+  suggestion                                                                    
+      only.                                                                     
+    - Never read anything under conversations/ or orders_sample_file.csv. Do    
+  not read                                                                      
+      any .csv or data file. Confine all glob, grep and find to                 
+  coding_assesment/,                                                            
+      and exclude .venv, pycache and .git.                                      
+    - Put any helper scripts in your scratchpad or temp directory outside the   
+  repo.                                                                         
+      Use the standard library only (ast, pathlib). Run them from               
+  coding_assesment/                                                             
+      with "uv run python -I <script>".                                         
+    - Treat the code as the source of truth. CLAUDE.md and PLAN.md may be       
+  stale:                                                                        
+      CLAUDE.md says only a stub exists, but the git history shows a full       
+      implementation. Report the drift instead of trusting the docs.            
+    - Do not ask questions. State assumptions explicitly and continue.          
+                                                                                
+    INTENDED ARCHITECTURE (the reference to audit against, unless the code's    
+  dominant                                                                      
+    pattern contradicts it, in which case report the conflict without picking a 
+    side)                                                                       
+    - routers handle HTTP only: request and response models, error-to-status    
+  mapping.                                                                      
+    - services orchestrate: question, then LLM, then validate, then execute.    
+    - repositories/db are the only layer touching the database (SQLAlchemy,     
+  psycopg).                                                                     
+      The SQL views are defined here.                                           
+    - schemas hold the Pydantic models.                                         
+    - The LLM client sits behind an interface so tests can inject a mock. The   
+      endpoint test must never hit the network.                                 
+    - The SQL validator is a separate, pure, unit-testable module. It rejects   
+      non-SELECT statements, multiple statements, and anything outside the      
+  table/view                                                                    
+      allowlist. Execution uses the read-only role app_ro in a read-only        
+      transaction.                                                              
+    - Data scripts are standalone and idempotent, and the cleaning logic is an  
+      importable function. Scripts may import the app package. The app must     
+  never                                                                         
+      import scripts.                                                           
+    - main.py is a thin entrypoint.                                             
+    - Dependencies point inward: the outer layers (routers, adapters) depend on 
+  the                                                                           
+      services and ports in the core, never the reverse.                        
+                                                                                
+    PROCEDURE (do each step in order and keep the evidence)                     
+    1. Map. Enumerate every first-party module. Write an AST script that builds 
+  the                                                                           
+       real import graph. It must resolve relative imports and flag three kinds 
+  of                                                                            
+       edge: function-level lazy imports, imports guarded by TYPE_CHECKING, and 
+  star                                                                          
+       imports. Assign each module to a layer (entrypoint, router, service,     
+       port/interface, adapter, repository/db, schema, validator, config,       
+  script).                                                                      
+       Report layers that the target architecture expects but that do not exist 
+  as                                                                            
+       "absent", not as violations.                                             
+    2. Check direction. Build the allowed-edge matrix from the intended         
+  architecture                                                                  
+       and list every edge that breaks it. Look specifically for these cases:   
+    - A service importing fastapi, a router, or HTTPException.                  
+    - A repository importing a service or a router.                             
+    - A router touching Session, engine, text() or raw SQL directly.            
+    - The validator importing sqlalchemy, fastapi, settings or db (it must stay 
+      pure).                                                                    
+    - The LLM port importing a concrete HTTP client.                            
+    - Schemas importing anything beyond pydantic and the standard library.      
+    - The app importing scripts.                                                
+    - Any layer instantiating a concrete adapter outside the composition root.  
+    3. Check cycles and coupling. Run strongly-connected-component detection,   
+       counting lazy imports as edges but tagging them. Compute afferent        
+  coupling                                                                      
+       (Ca), efferent coupling (Ce) and instability I = Ce / (Ca + Ce) per      
+  module.                                                                       
+       Flag Stable Dependencies Principle violations (a stable module depending 
+  on an                                                                         
+       unstable one), god modules, and high fan-in or fan-out hotspots.         
+    4. Check ports and adapters and the composition root. Answer each of these  
+  from                                                                          
+       the code:                                                                
+    - Is the LLM client a Protocol or ABC, and who constructs the concrete      
+  class?                                                                        
+    - Is wiring done through FastAPI Depends, or through module globals and     
+      singletons?                                                               
+    - Can the endpoint test swap the LLM through dependency overrides without   
+      monkeypatching network libraries?                                         
+    - Is configuration read in one settings module, or is os.environ scattered  
+  across                                                                        
+      modules?                                                                  
+    - Do any modules have import-time side effects (engine creation, env reads, 
+      network calls)?                                                           
+    5. Check leakage across boundaries. Find these cases:                       
+    - SQLAlchemy Row, Session or ORM objects crossing into services or routers. 
+    - HTTP concerns inside services.                                            
+    - Domain errors that are not mapped to HTTP responses in one place.         
+    - Pydantic schemas doubling as persistence models, or the reverse.          
+    - The allowlist or schema text duplicated across the validator, the LLM     
+  prompt                                                                        
+      and the DB grants and views, instead of coming from one source of truth.  
+    6. Check execution-path integrity. Enumerate every call site that executes  
+  SQL.                                                                          
+       For each one, state whether it passes through the validator and runs     
+  under the                                                                     
+       app_ro role in a read-only transaction. Any path where LLM-produced SQL  
+  can                                                                           
+       reach the database without both guards is a Blocker. This includes       
+  fallback,                                                                     
+       retry and error-handling paths.                                          
+    7. Check the scripts. Verify the import direction between scripts and the   
+  app.                                                                          
+       Check that the cleaning function is importable without side effects and  
+  is not                                                                        
+       duplicated in the app. Check that the load step reuses the DB layer or   
+       deliberately bypasses it, and say which.                                 
+    8. Challenge each finding. Re-read the cited line to confirm it. Then argue 
+  the                                                                           
+       opposite case: is this acceptable for a take-home with about 1,000 rows, 
+  or is                                                                         
+       it real design debt a reviewer would notice? Drop findings you cannot    
+  verify.                                                                       
+       Label the rest "verified" (backed by tool output or a quoted line) or    
+       "inferred". Calibrate severity to the project's scale and do not         
+  recommend                                                                     
+       heavyweight patterns (DI frameworks, hexagonal ceremony, extra           
+  abstraction                                                                   
+       layers) unless a concrete violation requires them.                       
+                                                                                
+    NEGATIVE CONSTRAINTS                                                        
+    - No style, lint, naming or test-coverage commentary unless it directly     
+  reveals                                                                       
+      an architectural boundary problem.                                        
+    - No praise padding. Include at most 3 "sound" items, each with evidence.   
+    - No invented modules or paths. Every claim cites file:line and quotes the  
+  import                                                                        
+      or code line.                                                             
+    - No full-file dumps. Show a minimal illustrative diff of at most 10 lines  
+  per                                                                           
+      finding, and only where a diff clarifies the fix.                         
+    - No closing questions, "next steps" menus or pleasantries.                 
+                                                                                
+    OUTPUT FORMAT (plain text, dense)                                           
+    1. VERDICT: one table with the rows Direction, Cycles, Ports/adapters,      
+  Boundary                                                                      
+       leakage, Execution-path integrity, Composition root/config,              
+  Scripts-to-app.                                                               
+       Give each a status of PASS, WARN or FAIL plus one line of justification. 
+    2. ACTUAL GRAPH: an ASCII layer-level diagram of the real edges (mark       
+  violating                                                                     
+       edges with "!!"), then a table with columns Module | Layer | Ca | Ce | I 
+  |                                                                             
+       Notes.                                                                   
+    3. FINDINGS, ordered Blocker, Major, Minor, Nit. Each finding has: ID |     
+  Rule                                                                          
+       violated | Evidence (file:line, quoted) | Why it matters (one sentence)  
+  |                                                                             
+       Minimal fix | Effort (S/M/L) | Confidence (verified/inferred) |          
+       Acceptable-for-take-home? (yes/no, reason).                              
+    4. DOC DRIFT: differences between CLAUDE.md or PLAN.md and the actual code. 
+    5. FIX ORDER: an ordered list of small, independently committable steps,    
+  each                                                                          
+       with a suggested commit message. Order them by risk reduction per        
+  effort.                                                                       
+    6. ASSUMPTIONS: anything you assumed instead of verifying.                  
+                                                                                
+    Before responding, identify the weakest part of your answer and improve it. 
+
+  Listed 1 directory, ran 6 shell commands (ctrl+o to expand)
+
+● Reading the code produced no Blocker. LLM-produced SQL reaches the database
+  through one call site, and that path is guarded by the validator, the app_ro
+  role and a read-only transaction. The main design debt is that the repository
+  port is defined inside the SQLAlchemy adapter module. I only read code. The
+  helper scripts are in the scratchpad (graph.py, probe.py) and I changed
+  nothing in the repo.
+
+  1. VERDICT
+
+  Area: Direction
+  Status: WARN
+  Justification: The service and router import app.db.repository, which holds
+    the port, the DTO, the errors and the SQLAlchemy adapter together. The LLM
+    side splits port from adapter correctly, so the two sides are
+    inconsistent.
+  ────────────────────────────────────────
+  Area: Cycles
+  Status: PASS
+  Justification: Strongly-connected-component detection over 20 modules found
+    no component larger than 1. There are no lazy, TYPE_CHECKING or star
+    imports.
+  ────────────────────────────────────────
+  Area: Ports/adapters
+  Status: WARN
+  Justification: LLMClient is a Protocol that the test overrides cleanly.
+    QueryRepository is also a Protocol, but it lives in the adapter module.
+  ────────────────────────────────────────
+  Area: Boundary leakage
+  Status: WARN
+  Justification: The db layer imports the HTTP schema module for Cell. The
+    allowlist and schema text exist in 4 places. No Row, Session or ORM object
+    crosses a boundary.
+  ────────────────────────────────────────
+  Area: Execution-path integrity
+  Status: PASS
+  Justification: The single call site is repository.py:83-89. Its only caller
+    is the service, after validate_sql. The path has no retry or fallback.
+  ────────────────────────────────────────
+  Area: Composition root/config
+  Status: WARN
+  Justification: Wiring goes through Depends with lru_cache and has no
+    import-time side effects. os.environ is read in two adapter modules, and
+    there is no settings module.
+  ────────────────────────────────────────
+  Area: Scripts-to-app
+  Status: PASS
+  Justification: Edges go only from scripts to app. clean_orders is importable
+    and not duplicated. The loader reuses create_engine_from_env and bypasses
+    the repository on purpose.
+
+  2. ACTUAL GRAPH
+
+  Edges come from the AST script. It found no lazy, TYPE_CHECKING or star
+  imports.
+
+  main ─▶ api ─▶ routers.query ─▶ dependencies ──▶ llm.client ─▶ llm.prompt ─▶ 
+  cleaning(pandas)
+                      │   │  │          │   └────▶ db.repository ─▶ 
+  db.connection
+                      │   │  │          └────────▶ services.query_service
+                      │   │  └─▶ services.query_service ─▶ llm.base (port)
+                      │   │                       ├─▶ validator (pure)
+                      │   │                       ├─▶ schemas
+                      │   │                       └─▶ db.repository 
+  (port+adapter) !!
+                      │   └─!!─▶ db.repository (error types, skips service)
+                      └─▶ schemas ◀─!!─ db.repository (Cell from HTTP schemas)
+  llm.prompt ─!!─▶ cleaning (ingest module, imports pandas)
+  scripts.* ─▶ cleaning, db.connection      (app ─▶ scripts: none)
+
+  Module: main
+  Layer: entrypoint
+  Ca: 0
+  Ce: 1
+  I: 1.00
+  Notes: Thin.
+  ────────────────────────────────────────
+  Module: app.api
+  Layer: app factory
+  Ca: 1
+  Ce: 1
+  I: 0.50
+  Notes:
+  ────────────────────────────────────────
+  Module: app.routers.query
+  Layer: router
+  Ca: 1
+  Ce: 5
+  I: 0.83
+  Notes: Highest fan-out. Imports db.repository directly.
+  ────────────────────────────────────────
+  Module: app.dependencies
+  Layer: composition root
+  Ca: 1
+  Ce: 4
+  I: 0.80
+  Notes: Only module that wires concrete adapters.
+  ────────────────────────────────────────
+  Module: app.services.query_service
+  Layer: service
+  Ca: 2
+  Ce: 4
+  I: 0.67
+  Notes: Imports the port from the db adapter module.
+  ────────────────────────────────────────
+  Module: app.llm.base
+  Layer: port + errors + extract_sql
+  Ca: 4
+  Ce: 0
+  I: 0.00
+  Notes: Imports only re and typing.
+  ────────────────────────────────────────
+  Module: app.llm.client
+  Layer: adapter
+  Ca: 1
+  Ce: 2
+  I: 0.67
+  Notes: Reads LLM_BASE_URL from os.environ.
+  ────────────────────────────────────────
+  Module: app.llm.prompt
+  Layer: adapter helper
+  Ca: 1
+  Ce: 1
+  I: 0.50
+  Notes: Imports cleaning.
+  ────────────────────────────────────────
+  Module: app.db.repository
+  Layer: port + DTO + errors + adapter + factory
+  Ca: 3
+  Ce: 2
+  I: 0.40
+  Notes: 119 lines, 7 concerns.
+  ────────────────────────────────────────
+  Module: app.db.connection
+  Layer: db infrastructure
+  Ca: 2
+  Ce: 0
+  I: 0.00
+  Notes: Reads os.environ.
+  ────────────────────────────────────────
+  Module: app.schemas
+  Layer: schema
+  Ca: 3
+  Ce: 0
+  I: 0.00
+  Notes: Imports pydantic and the standard library only.
+  ────────────────────────────────────────
+  Module: app.validator
+  Layer: validator
+  Ca: 1
+  Ce: 0
+  I: 0.00
+  Notes: Imports sqlglot only. Pure.
+  ────────────────────────────────────────
+  Module: app.cleaning
+  Layer: script/domain logic
+  Ca: 3
+  Ce: 0
+  I: 0.00
+  Notes: Imports pandas at module level.
+  ────────────────────────────────────────
+  Module: scripts.generate_orders
+  Layer: script
+  Ca: 0
+  Ce: 1
+  I: 1.00
+  Notes:
+  ────────────────────────────────────────
+  Module: scripts.load_orders
+  Layer: script
+  Ca: 0
+  Ce: 2
+  I: 1.00
+  Notes:
+
+  I found no Stable Dependencies Principle violation and no god module.
+  db.repository is the closest to one on cohesion, not on fan-in or fan-out.
+
+  3. FINDINGS
+
+  Blocker: none.
+
+  Major
+
+  - M1 — Port, DTO and errors live in the adapter module (the dependency points 
+    the wrong way).
+    - Rule violated: dependencies point inward; the service depends on a port,
+      not on an adapter module.
+    - Evidence:
+      - services/query_service.py:5 from app.db.repository import 
+        QueryFailedError, QueryRepository
+      - routers/query.py:8 from app.db.repository import 
+        (DatabaseUnavailableError, QueryExecutionError, QueryTimeoutError)
+      - db/repository.py:69 class QueryRepository(Protocol) sits in the same
+        file as PostgresQueryRepository (:75) and from sqlalchemy import Engine
+        (:9).
+      - Runtime check: importing app.services.query_service loads sqlalchemy.
+      - The service re-raises QueryTimeoutError and DatabaseUnavailableError
+        unchanged, so the router has to import them from the db layer.
+    - Why it matters: the core and the router are coupled to SQLAlchemy through
+      a module whose only job should be the Postgres adapter.
+    - Minimal fix: move the Protocol, QueryResult and the QueryExecutionError
+      family to a port module, for example app/db/ports.py or
+      app/services/ports.py, mirroring llm/base.py. repository.py then keeps
+      only the adapter.
+  -from app.db.repository import QueryFailedError, QueryRepository
+  +from app.db.ports import QueryFailedError, QueryRepository
+    - Effort: S/M.
+    - Confidence: verified.
+    - Acceptable for a take-home? Yes, because it works and is tested. A
+      reviewer comparing llm/base.py with db/repository.py would still see the
+      inconsistency, so it is real design debt.
+
+  Minor
+
+  - m1 — The db layer imports the HTTP schema module.
+    - Rule violated: schemas are leaf modules, and persistence code does not
+      depend on API models.
+    - Evidence: db/repository.py:13 from app.schemas import Cell. schemas.py:1
+      is documented as "Pydantic request/response models of the HTTP API".
+    - Why it matters: the repository's return type is defined by the HTTP
+      contract, so a response-schema change reaches the db layer.
+    - Minimal fix: define Cell next to QueryResult in the port module from M1,
+      and import it from there in schemas.py. schemas.py may then depend on a
+      port module, so it would no longer be limited to pydantic and the standard
+      library. If you want it to stay limited to pydantic and the standard
+      library, keep Cell in schemas.py and have the port module import it from
+      there.
+    - Effort: S.
+    - Confidence: verified.
+    - Acceptable for a take-home? Yes. It is one alias and the rows are plain
+      lists.
+  - m2 — The allowlist and schema text are duplicated across 4 places.
+    - Rule violated: single source of truth.
+    - Evidence:
+      - validator.py:15 ALLOWED_TABLES = frozenset({"orders", 
+        "v_sales_by_month_country", "v_top_customers"})
+      - llm/prompt.py:9-14 hand-written column lists for the same three objects.
+      - db/schema.sql and db/views.sql define the same columns.
+      - 01-readonly-role.sh:27-28 ALTER DEFAULT PRIVILEGES … GRANT SELECT ON 
+        TABLES TO app_ro covers every future table, not just the allowlist.
+    - Mitigation: tests/test_llm_client.py:154 asserts that every ALLOWED_TABLES
+      entry appears in the prompt.
+    - Why it matters: adding a view means editing the validator, the prompt and
+      the SQL by hand. If the role's grants change, the allowlist stays only in
+      the validator.
+    - Minimal fix: keep the existing test, and add a grant check that fails when
+      the role can select outside the allowlist. A shared constant is not
+      needed.
+    - Effort: S.
+    - Confidence: verified.
+    - Acceptable for a take-home? Yes, with the test as the drift guard.
+      PLAN.md:63 promises "SELECT only on orders + the 2 views", but the
+      implementation grants more.
+  - m3 — llm.prompt imports the ingest module, which imports pandas.
+    - Rule violated: an adapter depends on domain vocabulary, not on a
+      data-cleaning implementation.
+    - Evidence: llm/prompt.py:3 from app.cleaning import COUNTRIES, 
+      VALID_STATUSES, and cleaning.py:12 import pandas as pd. Runtime check:
+      importing app.llm.client loads pandas.
+    - Why it matters: the API process loads pandas only to read two tuples, and
+      cleaning is wrongly stable as a dependency of the request path.
+    - Minimal fix: move COUNTRIES and VALID_STATUSES to a constants module such
+      as app/domain.py. cleaning and prompt then both import it.
+    - Effort: S.
+    - Confidence: verified.
+    - Acceptable for a take-home? Yes, but the fix is cheap.
+  - m4 — No settings module, and os.environ is read in two adapter modules.
+    - Rule violated: config is read in one place.
+    - Evidence:
+      - db/connection.py:10 url = os.environ.get(var)
+      - llm/client.py:63 base_url = os.environ.get("LLM_BASE_URL")
+      - The env variable names are string literals at repository.py:119 and
+        scripts/load_orders.py:64.
+      - Factories live inside the adapters, so the wiring in dependencies.py is
+        split across three files.
+    - Why it matters: the set of required env vars cannot be read from one
+      place.
+    - Minimal fix: add a small app/config.py with READONLY_DATABASE_URL,
+      DATABASE_URL and LLM_BASE_URL, and have dependencies.py pass the values
+      into the constructors.
+    - Effort: S/M.
+    - Confidence: verified.
+    - Acceptable for a take-home? Yes. Three env vars, read lazily, with
+      fail-fast RuntimeError messages.
+  - m5 — The "validated SQL only" guarantee is a convention, not a type.
+    - Rule violated: the guard should hold structurally.
+    - Evidence: repository.py:70 def run_select(self, sql: str),
+      repository.py:83 SET TRANSACTION READ ONLY, repository.py:119 the role
+      comes only from READONLY_DATABASE_URL. The sole caller is
+      query_service.py:44.
+    - Why it matters: a future caller could pass unvalidated SQL. If the URL
+      pointed at the owner role, the only remaining guard would be the
+      per-transaction read-only flag. The repository never checks current_user.
+    - Minimal fix: have validate_sql return a NewType("ValidatedSQL", str) and
+      have run_select accept it.
+    - Effort: S.
+    - Confidence: verified for the signature, inferred for the misconfiguration
+      scenario.
+    - Acceptable for a take-home? Yes, with one caller and tests.
+
+  Nit
+
+  - n1 — Providers are cached with lru_cache and never closed.
+    dependencies.py:14 and :19. There is no lifespan to dispose the engine or
+    the httpx client. The override seam still works. Confidence: verified.
+    Acceptable.
+  - n2 — Resource-heavy but valid SELECTs are accepted.
+    - The probe accepted SELECT generate_series(1,100000000) and a 4-way cross
+      join of orders.
+    - Containment is statement_timeout = 5s and MAX_ROWS (repository.py:15-16).
+      I did not measure whether psycopg buffers results client-side. Confidence:
+      inferred. Acceptable.
+  - n3 — QueryAnswer repeats QueryResult plus sql. query_service.py:24 against
+    repository.py:45. Confidence: verified. Acceptable.
+
+  I dropped one candidate: the inline /, /health and /ui routes in api.py are
+  HTTP concerns in an app factory, so they are not a boundary breach.
+
+  Findings I checked and found clean:
+  - Validator: the probe rejected pg_sleep, set_config, pg_read_file, lo_import,
+    nextval, dblink, query_to_xml, pg_ls_dir, pg_user, "Orders" and
+    schema-qualified names.
+  - Layering: no module imports a layer above it, app never imports scripts, and
+    the service imports neither fastapi nor HTTPException.
+  - Leakage: no sqlalchemy Row leaves repository.py; to_cell converts every
+    value.
+  - Error mapping: it happens only in routers/query.py:37-52.
+
+  Sound items:
+  1. app/validator.py imports only sqlglot (:9-13) and has no I/O.
+  2. tests/test_api.py:76-77 swaps get_llm_client and get_query_repository
+     through dependency_overrides, with no network monkeypatching.
+  3. app/llm/base.py defines the port without any HTTP client, and client.py is
+     the only httpx user.
+
+  4. DOC DRIFT
+
+  - CLAUDE.md ("What this is") says only a stub exists and everything else is to
+    be built. The code has the full implementation and the git history shows
+    it.
+  - CLAUDE.md says api exists "once built" and that .env is "not in .gitignore
+    yet". .gitignore now has .env and data/.
+  - CLAUDE.md says tooling is "none declared yet". pyproject.toml declares
+    pytest, ruff, pandas and sqlglot.
+  - PLAN.md:10 says "only a FastAPI stub", "no commits" and "Nothing else is
+    built". This contradicts the [x] checklist at :108-135.
+  - PLAN.md:83-95 layout omits app/api.py, app/dependencies.py, app/cleaning.py,
+    app/llm/prompt.py, app/db/schema.sql, app/static/index.html and four test
+    files. It also puts .env.example under coding_assesment/, but git tracks it
+    at the repo root.
+  - PLAN.md:63 promises SELECT only on orders plus the two views. The grant is a
+    default privilege on all tables.
+
+  5. FIX ORDER
+
+  1. refactor: move QueryRepository port, QueryResult and errors out of the 
+     Postgres adapter fixes M1 and m1.
+  2. refactor: move COUNTRIES/VALID_STATUSES out of cleaning so the API stops 
+     importing pandas fixes m3.
+  3. refactor: type validated SQL so run_select cannot accept raw strings fixes
+     m5.
+  4. test: assert app_ro can select only allowlisted objects fixes m2. It needs
+     a database, so mark it as an integration test.
+  5. refactor: read env vars in a single settings module fixes m4.
+  6. docs: sync CLAUDE.md and PLAN.md with the implemented layout fixes the doc
+     drift.
+
+  6. ASSUMPTIONS
+
+  - I treated the intended architecture as the reference. Where the code splits
+    the LLM port correctly but not the repository port, I reported both and
+    picked neither pattern.
+  - Ca, Ce and I count only module-to-module edges between modules under app/,
+    scripts/ and main.py, and exclude tests/. __init__.py files are empty and
+    excluded.
+  - I did not read docker-compose.yml beyond the env-var lines, and I did not
+    run the database, so the role grants are judged from 01-readonly-role.sh and
+    not from a live role.
+  - The app_ro setup is as the init script describes. I did not verify the live
+    role.
+  - I did not run lint because I changed no project files.
+
+  Weakest part of this answer. The execution-path claim could have been vacuous
+  if only the service called run_select. I grepped every execute and
+  exec_driver_sql call in app/, scripts/ and main.py. All runtime SQL execution
+  is in repository.py, and the loader's owner-role statements contain no LLM
+  input. I did not check tests/.
+
+✻ Sautéed for 1m 56s · done 10:06 PM
+
+❯ what should we fix? (only critical and high importance)                       
+
+● Nothing is critical. I found no Blocker, and every path that runs LLM SQL is
+  guarded.
+
+  One high-importance fix: M1. The repository port, QueryResult and the
+  execution errors live in app/db/repository.py, next to the SQLAlchemy adapter.
+  As a result:
+  - The service imports SQLAlchemy through services/query_service.py:5.
+  - The router reaches into the db layer for exception types at
+    routers/query.py:8.
+  - The LLM side already splits its port from its adapter correctly, so the two
+    sides are inconsistent.
+
+  Fix:
+  1. Create a port module, for example app/db/ports.py, holding QueryRepository,
+     QueryResult, Cell and the QueryExecutionError family.
+  2. Leave only PostgresQueryRepository, _map_error, to_cell and the factory in
+     repository.py.
+  3. Repoint the imports in services/query_service.py, routers/query.py,
+     dependencies.py and the tests.
+
+  That change also resolves m1, where the db layer imports Cell from the HTTP
+  schemas. Effort is S/M.
+
+  Everything else I found is Minor or Nit and acceptable for a take-home. The
+  one worth a second look is m5, typing validated SQL so run_select can't take a
+  raw string. It is cheap, and it makes the guard structural. It is not high
+  importance.
+
+✻ Worked for 4s · done 10:07 PM
+
+❯ fix it then                                                                   
+
+  Searched for 1 pattern, ran 1 shell command (ctrl+o to expand)
+
+● Now write the port module and slim the adapter.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+❯ commit the results                                                            
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I fixed M1 and committed it as 082a9a2. The tests pass (166), and ruff reports
+  nothing.
+
+  - New module: app/db/ports.py holds QueryRepository, QueryResult and the
+    QueryExecutionError family. It imports no database driver.
+  - Adapter: app/db/repository.py now keeps only PostgresQueryRepository,
+    to_cell, _map_error and the factory.
+  - Imports repointed: services/query_service.py, routers/query.py,
+    dependencies.py, tests/test_api.py and tests/test_repository.py now import
+    from app.db.ports. dependencies.py still imports the factory from
+    app.db.repository.
+  - Check: importing app.services.query_service on its own no longer loads
+    SQLAlchemy.
+  - Router: the router still loads SQLAlchemy through app.dependencies. That is
+    the composition root and is expected.
+
+  I did not touch m1, which is the db layer importing Cell from the HTTP
+  schemas. ports.py still has from app.schemas import Cell, so that edge
+  remains.
+
+  I committed only the files this change touched. orders_sample_file.csv and
+  conversations/ are still untracked.
+
+✻ Churned for 24s · done 10:07 PM

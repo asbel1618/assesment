@@ -1,0 +1,513 @@
+ ▐▛███▛█   Claude Code v2.1.332
+▝▜██████▀  Sonnet 5.5 · Claude Pro
+ ▝▝   ▝▝   ~/projects/test
+
+
+❯ Taking into account @coding_assesment/PLAN.md /plan the steps you have to     
+  take to complete phase 0 of the project creation.                             
+  ⎿  Read coding_assesment/PLAN.md (169 lines)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Entered plan mode
+  Claude is exploring and planning an approach.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Updated plan
+  ⎿  /plan to preview
+
+● Approved Claude's plan
+  ⎿  Plan saved to: ~/.claude/plans/merry-spinning-dongarra-of-4332d478-e1a8-46f
+     6-b04e-8cabf90247bf.md · /plan to edit
+     Plan: Step 0 – Init (gitignore, env example, deps)
+
+     Context
+
+     PLAN.md §4 step 0 is the first commit. Nothing may leak (.env is untracked
+     and holds POSTGRES_PASSWORD), and dependencies must exist before any code.
+     Current state: no commits; untracked .env, CLAUDE.md, docker-compose.yml,
+     coding_assesment/, conversations/; no root .gitignore/.env.example;
+     pyproject.toml has dependencies = []; inner coding_assesment/.gitignore
+     only has Python/venv ignores.
+
+     Actions (in order)
+
+     1. Create root /home/asbel/projects/test/.gitignore (new file, nothing
+        overwritten):
+        .env, data/ (matches coding_assesment/data/ at any depth), .venv,
+        __pycache__/, *.py[oc], build/, dist/, wheels/, *.egg-info,
+        .pytest_cache/, .ruff_cache/.
+        Keep the inner .gitignore untouched (redundant but harmless; avoids an
+        unrequested change).
+     2. Create root /home/asbel/projects/test/.env.example (names only, no real
+        values; compose reads root .env):
+     POSTGRES_USER=
+     POSTGRES_PASSWORD=
+     POSTGRES_DB=
+     APP_RO_PASSWORD=
+     DATABASE_URL=
+     READONLY_DATABASE_URL=
+     LLM_BASE_URL=
+        Placeholder hints as comments only (e.g. # host: 
+        postgresql+psycopg://USER:PASS@127.0.0.1:5432/DB; container host is db).
+        No secrets.
+     3. Do not edit .env. Report that it currently lacks POSTGRES_DB (compose
+        default orders), APP_RO_PASSWORD, DATABASE_URL, READONLY_DATABASE_URL,
+        LLM_BASE_URL; user adds them (needed from step 3 onward, not blocking
+        step 0).
+     4. Dependencies – user runs (I do not touch pyproject.toml), from
+        coding_assesment/:
+     uv add "fastapi[standard]" sqlalchemy "psycopg[binary]" sqlglot pandas
+     uv add --dev pytest ruff
+        Decision for user: pandas is optional (PLAN §5, decide at step 2).
+        Recommendation: keep it out for now (minimal deps; stdlib csv+datetime
+        suffice for ~1,100 rows) → drop pandas from the first command; PLAN.md
+        step 2 signatures (clean_df, rejects_df) would then become lists of
+        dicts. Needs user confirmation before they run the command.
+     5. Verify (read-only):
+        - git status --short → .env absent from output; git check-ignore -v .env
+          coding_assesment/data/x.csv lists both.
+        - grep -c '=' .env.example = 7 and every var from PLAN §0 present.
+        - cd coding_assesment && uv run python -c "import fastapi, sqlalchemy, 
+          psycopg, sqlglot" exits 0.
+        - uv run ruff check . && uv run ruff format --check . clean (lint
+          changed files).
+     6. Update PLAN.md: tick step 0 checkbox; append AI-log row (asked: init
+        scaffolding; accepted/corrected: pandas decision). Only after
+        verification passes.
+     7. Commit only when user asks. Proposed single commit chore: gitignore, env
+        example, deps, staging explicitly: .gitignore, .env.example, CLAUDE.md,
+        docker-compose.yml, coding_assesment/ (incl. pyproject.toml, uv.lock,
+        PLAN.md). Never git add -A/.env.
+
+     Open points for the user
+
+     - conversations/0.txt (22 KB, untracked, appeared at 17:16): contents
+       unreviewed. Recommend leaving it out of the commit (add conversations/ to
+       the root .gitignore) unless it is intended assessment evidence; AI-usage
+       transcripts could be useful for the README log but may contain private
+       info.
+     - pandas keep/drop (above).
+
+     Done when (PLAN §4)
+
+     .env ignored; .env.example lists every §0 var; user confirmed uv add ran;
+     import check succeeds.
+
+● Write(.gitignore)
+  ⎿  Wrote 21 lines to .gitignore
+       1 # Secrets
+       2 .env
+       3 
+       4 # Generated data
+       5 data/
+       6 
+       7 # Local transcripts (not part of the deliverable)
+       8 conversations/
+       9 
+      10 # Python
+     … +11 lines (ctrl+o to expand)
+
+● Write(.env.example)
+  ⎿  Wrote 13 lines to .env.example
+       1 # Copy to .env and fill in. Never commit .env.
+       2 POSTGRES_USER=
+       3 POSTGRES_PASSWORD=
+       4 POSTGRES_DB=
+       5 # Password of the read-only role `app_ro` used by the API
+       6 APP_RO_PASSWORD=
+       7 # Owner role, used by the loader.
+       8 # host: postgresql+psycopg://USER:PASS@127.0.0.1:5432/DB  |  con
+         tainer: host `db`
+       9 DATABASE_URL=
+     … +4 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 0 is only partly done. The ignore rules and .env.example are in place,
+  but the dependencies aren't installed yet.
+
+  Created
+  - .gitignore (repo root) ignores .env, data/, conversations/, the Python build
+    artifacts, the pytest/ruff caches and .venv. I left the inner
+    coding_assesment/.gitignore as it was.
+  - .env.example (repo root) lists the 7 variables from PLAN §0, with only
+    comments and no values.
+
+  Checked
+  - git status no longer shows .env. git check-ignore confirms both .env and
+    coding_assesment/data/x.csv are ignored.
+  - The import check import fastapi, sqlalchemy, psycopg, sqlglot fails with
+    ModuleNotFoundError: No module named 'fastapi'. That is expected, since
+    pyproject.toml still has dependencies = []. The run did create
+    coding_assesment/.venv, which is already ignored.
+
+  What you need to do
+  1. Decide on pandas. I'd drop it, since stdlib csv and datetime are enough for
+     about 1,100 rows. If you keep it, add it back to the first command.
+  2. Run these from coding_assesment/:
+  uv add "fastapi[standard]" sqlalchemy "psycopg[binary]" sqlglot
+  uv add --dev pytest ruff
+  3. Add the missing variables to the root .env. It currently has only
+     POSTGRES_USER and POSTGRES_PASSWORD. It still needs POSTGRES_DB (compose
+     defaults to orders), APP_RO_PASSWORD, DATABASE_URL, READONLY_DATABASE_URL
+     and LLM_BASE_URL. These aren't needed until step 3.
+
+  Still to do once you've run the uv add commands
+  - Re-run the import check and uv run ruff check . && uv run ruff format 
+    --check ..
+  - Tick step 0 in PLAN.md and add the AI-log row.
+
+  Your call: I added conversations/ to .gitignore because I haven't reviewed
+  conversations/0.txt and it might contain private information. If you want that
+  transcript committed as AI-usage evidence, remove that line.
+
+  I haven't committed anything. The proposed message is chore: gitignore, env 
+  example, deps.
+
+✻ Brewed for 33s · done 5:20 PM
+
+❯ 1. Let's use pandas for showoff since (mostly) no real work is done using std 
+  and csv.                                                                      
+  2. Run and diagnose the commands yourself come back to me only if there is a  
+       decission to take.                                                       
+  3. Add the variables with sencible values                                     
+    - Re-run the import check and uv run ruff check . && uv run ruff format     
+  --check ..                                                                    
+    - Tick step 0 in PLAN.md and add the AI-log row.                            
+    4. Don't add conversations/ to the gitignore, that's for the interviewer.   
+    5. Don't commint anything i'll do it later.                                 
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(.gitignore)
+  ⎿  Removed 3 lines
+       4  # Generated data
+       5  data/
+       6 
+       7 -# Local transcripts (not part of the deliverable)              
+       8 -conversations/                                                 
+       9 -                                                               
+       7  # Python
+       8  __pycache__/
+       9  *.py[oc]
+
+● Now the .env variables, built without printing secrets.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(coding_assesment/PLAN.md)
+  ⎿  Added 1 line, removed 1 line
+      103 
+      104  ## 4. Steps (one or two focused commits each)
+      105 
+      106 -- [ ] **0. Init** — root `.gitignore` (`.env`, `data/`, `.venv
+          -`, `__pycache__/`; supersedes the inner one, which is removed 
+          -or kept as-is), root `.env.example` (`POSTGRES_USER`, `POSTGRE
+          -S_PASSWORD`, `POSTGRES_DB`, `APP_RO_PASSWORD`, `LLM_BASE_URL`,
+          - `DATABASE_URL`, `READONLY_DATABASE_URL`). Compose `db` servic
+          -e is already added. User runs deps (see §5). First commit also
+          - tracks `CLAUDE.md` and `docker-compose.yml`.                 
+      106 +- [x] **0. Init** — root `.gitignore` (`.env`, `data/`, `.venv
+          +`, `__pycache__/`; supersedes the inner one, which is removed 
+          +or kept as-is), root `.env.example` (`POSTGRES_USER`, `POSTGRE
+          +S_PASSWORD`, `POSTGRES_DB`, `APP_RO_PASSWORD`, `LLM_BASE_URL`,
+          + `DATABASE_URL`, `READONLY_DATABASE_URL`). Compose `db` servic
+          +e is already added. User runs deps (see §5). First commit also
+          + tracks `CLAUDE.md` and `docker-compose.yml`.                 
+      107    `chore: gitignore, env example, deps`
+      108    *Why:* nothing may leak (secrets) and dependencies must exis
+           t before code. *Done when:* `git status` shows `.env` ignored;
+            `.env.example` lists every var in §0; user confirmed `uv add`
+            ran; `uv run python -c "import fastapi, sqlalchemy, psycopg,
+           sqlglot"` succeeds.
+      109  - [ ] **1. Generator** — `scripts/generate_orders.py`, seeded,
+            ~1,100 rows. Inject: exact duplicates, multiple date formats
+           + typos/invalid dates, empty/garbage amounts; also country cas
+           ing, whitespace, invalid status.
+
+● Update(coding_assesment/PLAN.md)
+  ⎿  Added 1 line
+      167  | Step | Asked | Accepted | Corrected / rejected |
+      168  |---|---|---|---|
+      169  | planning | Assessment breakdown, target layout, step list |
+           Layered layout, validator + read-only role as defense in depth
+            | User chose local llama.cpp over a hosted API, `sqlglot`, SQ
+           LAlchemy, then PostgreSQL instead of SQLite; plan updated acco
+           rdingly |
+      170 +| 0 | Init scaffolding: root `.gitignore`, `.env.example`, dep
+          +endency install, `.env` variables | Ignore rules and env examp
+          +le as proposed; AI ran `uv add` after explicit user authorizat
+          +ion | User kept `pandas` (to showcase real data work, over std
+          +lib `csv`); rejected ignoring `conversations/` (transcripts ar
+          +e for the reviewer); AI generated `APP_RO_PASSWORD` and built 
+          +DB URLs locally without echoing secrets |                     
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 0 is complete and verified. Nothing is committed.
+
+  - Dependencies: I ran both uv add commands, including pandas, and both
+    exited 0. pyproject.toml and uv.lock are updated.
+  - Checks: the import check for fastapi, sqlalchemy, psycopg, sqlglot and
+    pandas passes. ruff check and ruff format --check are clean.
+  - .env: I appended the five missing variables and left your two existing
+    values untouched. POSTGRES_DB is orders, and LLM_BASE_URL is
+    http://127.0.0.1:8080/v1. APP_RO_PASSWORD is a generated random 24-character
+    alphanumeric string. DATABASE_URL (owner role) and READONLY_DATABASE_URL
+    (app_ro) are built from your values. Both use host 127.0.0.1, so the api
+    compose service in step 9 will need to override them to host db. I didn't
+    print any secrets. .env is still ignored by git.
+  - .gitignore: conversations/ is no longer ignored, so it shows as untracked.
+  - PLAN.md: step 0 is ticked and the AI-log row is added.
+
+  Your commit will pick up these files, which are all untracked:
+  - .gitignore
+  - .env.example
+  - CLAUDE.md
+  - docker-compose.yml
+  - coding_assesment/
+  - conversations/
+
+  The proposed message is chore: gitignore, env example, deps.
+
+✻ Churned for 2m 7s · done 5:27 PM
+
+※ recap: We're building the take-home SQL-question API, and step 0 (gitignore, env example, dependencies, `.env` variables) is finished and verified, with nothing committed. Next, you commit it as `chore: gitignore, env example, deps`, then we start step 1, the dirty-orders CSV generator. (turn off recaps in /config)
+
+❯ Make the first run of the project with docker-compose up and read the logs    
+  with docker-compose logs                                                      
+
+  Ran 5 shell commands · 1 failed (ctrl+o to expand)
+
+● Both services are up and healthy, and I found no errors in the logs.
+
+  - db: Postgres 17.12 is ready and accepts connections. The login from .env
+    works. The orders database has no tables yet, which is expected.
+  - llm: the model Qwen3.5-9B-UD-Q4_K_XL.gguf loaded in about 2 minutes. The
+    server listens on :8080, and curl http://127.0.0.1:8080/health returns
+    {"status":"ok"}.
+  - llm warnings: these are harmless.
+    - LLAMA_ARG_HOST and LLAMA_ARG_PORT are set in the environment but
+      overridden by the command-line flags.
+    - Flash Attention is disabled on the GPU and falls back to the CPU.
+    - llama.cpp warns that no API key is set and CORS allows all origins. The
+      port is bound to 127.0.0.1 only, so nothing outside this machine can reach
+      it.
+
+  Postgres logged "Database directory appears to contain a database; Skipping
+  initialization". The test_pgdata volume was created at 19:08 local time, about
+  a minute before this run, so a start before mine had already created it. That
+  is harmless today. Postgres only runs the init scripts in
+  docker-entrypoint-initdb.d on an empty volume. When step 3 adds the app_ro
+  init script, it won't run on this volume until you run docker compose down -v
+  to recreate it. Nothing exists in the database yet, so that costs nothing.
+
+  I used docker compose up -d instead of the attached up, so the services are
+  still running and I could read the logs. I used the v2 docker compose plugin,
+  not the docker-compose binary at /usr/bin/docker-compose. I did not read
+  anything in conversations/.
+✻ Churned for 2m 21s · done 7:11 PM
+
+※ recap: We're building the take-home assessment, and step 0 (gitignore, env example, dependencies) is done, with `db` and `llm` now running healthy under compose. Next is your commit of step 0, then step 1, the dirty-orders CSV generator, when you say go. (turn off recaps in /config)
+
+❯ /context 
+  ⎿  Context usage
+     ⛀ ⛁ ⛁ ⛁ ⛁ ⛀ ⛁ ⛁ ⛀ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛶ ⛶ ⛶   Sonnet 5.5
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   claude-sonnet-5-5
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   75.9k/1m tokens (8%)
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ 
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   Estimated tokens by category
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ System prompt: 3k (0.3%)
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ System tools: 18.7k (2%)
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ MCP server instructions: 984 (0.1%)
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ Memory files: 3.5k (0.4%)
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛝ ⛝ ⛝ ⛝ ⛝ ⛝ ⛝   ⛁ Skills: 8.3k (0.8%)
+                                               ⛁ Messages: 41.4k (4%)
+                                               ⛶ Free space: 891.1k (89%)
+                                               ⛝ Autocompact buffer: 33k (3%)
+
+     Auto-compact window:  1m tokens
+
+     17 MCP tools (loaded on-demand) · 3 memory files · 57 skills
+     /context all to expand
+
+❯ Let's plan the generation of data then.                                       
+
+● Entered plan mode
+  Claude is exploring and planning an approach.
+
+● This is a different task (step 1), so I'm overwriting the old plan.
+
+● Updated plan
+  ⎿  /plan to preview
+
+● Approved Claude's plan
+  ⎿  Plan saved to: ~/.claude/plans/merry-spinning-dongarra-of-4332d478-e1a8-46f
+     6-b04e-8cabf90247bf.md · /plan to edit
+     Plan: Step 1 – Dirty orders CSV generator
+
+     Context
+
+     PLAN.md §4 step 1. Step 2 (cleaning, TDD) and the README numbers need
+     reproducible dirty input with known ground truth. Step 0 is done (deps
+     installed, stdlib suffices here; pandas is reserved for cleaning). Data
+     contract is fixed in PLAN §0 (2025 dates, 8 countries, 4 statuses, 4 defect
+     families). Commit message (user commits): feat: dirty orders CSV 
+     generator.
+
+     Files
+
+     - New coding_assesment/scripts/generate_orders.py (stdlib only:
+       random.Random, csv, json, argparse, dataclasses).
+     - New coding_assesment/tests/test_generator.py (determinism, size, each
+       defect count > 0).
+     - Output (gitignored): coding_assesment/data/orders_raw.csv +
+       data/orders_raw.manifest.json (injected-defect counts = ground truth for
+       step 2 tests).
+     - Edit PLAN.md: tick step 1, AI-log row. No dependency changes. scripts/
+       needs importability from tests: add scripts/__init__.py and run pytest
+       from coding_assesment/ (rootdir on sys.path via pythonpath = ["."] is a
+       pyproject config key, so I'd propose it rather than edit unasked → prefer
+       scripts/__init__.py only).
+
+     Design
+
+     Pure core, thin CLI:
+     - generate_orders(seed: int, rows: int) -> tuple[list[dict[str, str]], 
+       DefectCounts] — no I/O, uses a local random.Random(seed) (no global state
+       ⇒ deterministic).
+     - write_csv(rows, path), main() with --seed (default 42), --rows (default
+       1100, min 1000), --out (default data/orders_raw.csv). Creates data/ if
+       missing; prints the defect summary.
+     - DefectCounts frozen dataclass; asdict → manifest JSON.
+
+     Generation pipeline (all rows are strings, as a raw CSV would be):
+     1. Base: N_unique = rows − n_dups valid rows. Pools: ~60 customers (skewed
+        weights so top 10 is meaningful), 8 countries, ~12 products with price
+        bands, dates uniform over 2025-01-01…2025-12-31, status weights
+        completed 70 / pending 12 / cancelled 10 / refunded 8, amount =
+        lognormal-ish rounded to 2 dp.
+     2. Defect injection on disjoint, randomly sampled row indices (so each
+        count is exact and independently assertable):
+
+     ┌──────────┬────────────────────────────────┬───────────┬────────────┐
+     │          │                                │ Share of  │ Cleaning   │
+     │  Family  │             Defect             │  unique   │  outcome   │
+     │          │                                │   rows    │            │
+     ├──────────┼────────────────────────────────┼───────────┼────────────┤
+     │ Date     │ DD/MM/YYYY                     │ ~8%       │ parse OK   │
+     ├──────────┼────────────────────────────────┼───────────┼────────────┤
+     │ Date     │ Mon DD, YYYY                   │ ~8%       │ parse OK   │
+     ├──────────┼────────────────────────────────┼───────────┼────────────┤
+     │          │ invalid/misspelled:            │           │            │
+     │ Date     │ 2025-13-45, 2025/02/30,        │ ~3%       │ reject     │
+     │          │ 2O25-03-01, n/a, empty         │           │            │
+     ├──────────┼────────────────────────────────┼───────────┼────────────┤
+     │ Amount   │ $1,200.50 style                │ ~4%       │ parse OK   │
+     ├──────────┼────────────────────────────────┼───────────┼────────────┤
+     │ Amount   │ empty / N/A / garbage (abc)    │ ~4%       │ reject     │
+     ├──────────┼────────────────────────────────┼───────────┼────────────┤
+     │ Country  │ case/whitespace variants       │ ~8%       │ normalize  │
+     │          │ (spain, FRANCE)                │           │            │
+     ├──────────┼────────────────────────────────┼───────────┼────────────┤
+     │ Customer │ whitespace/case variants       │ ~4%       │ normalize  │
+     ├──────────┼────────────────────────────────┼───────────┼────────────┤
+     │ Status   │ case/whitespace variants       │ ~4%       │ normalize  │
+     │          │ (Completed )                   │           │            │
+     ├──────────┼────────────────────────────────┼───────────┼────────────┤
+     │ Status   │ invalid (complete, unknown)    │ ~2%       │ reject     │
+     └──────────┴────────────────────────────────┴───────────┴────────────┘
+
+     3. Duplicates (~8% of total, appended after dirtying, then whole file
+        shuffled with the same RNG): mostly byte-exact copies, plus a few
+        "normalized" duplicates differing only by case/whitespace to exercise
+        dedupe-on-normalized-row (PLAN §0 policy).
+     4. Day-first only (DD/MM/YYYY); force day > 12 for these rows so the format
+        is unambiguous and the policy is documented rather than guessed.
+     5. Header: date,customer,country,product,amount,status.
+
+     Layer/ground-truth note: manifest counts are what step 2's test_cleaning.py
+     can assert against (rejects == date_invalid + amount_invalid + 
+     status_invalid, accounting for overlap-free sampling).
+
+     Verification
+
+     - uv run python -m scripts.generate_orders twice → sha256sum 
+       data/orders_raw.csv identical; different --seed → different hash.
+     - wc -l data/orders_raw.csv ≥ 1,001; manifest shows every defect count > 0.
+     - uv run pytest tests/test_generator.py green (no network/DB).
+     - git check-ignore data/orders_raw.csv confirms ignored; git status shows
+       no data file.
+     - uv run ruff check . && uv run ruff format --check . clean.
+
+     Decisions taken (no blocking questions)
+
+     - stdlib generator (pandas stays for step 2).
+     - Sidecar manifest as ground truth instead of re-deriving counts by
+       re-parsing the CSV.
+     - Run as python -m scripts.generate_orders from coding_assesment/ (needs
+       scripts/__init__.py).
+     - Not committing; step tick + AI-log row added after verification.
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ Hand off the plan, don't execute it.                                          
+
+● The step 1 plan is approved and saved. I haven't implemented it, and no files
+  in the repo have changed.
+
+  Plan file: /home/asbel/.claude/plans/merry-spinning-dongarra-of-4332d478-e1a8-
+  46f6-b04e-8cabf90247bf.md
+
+  Starting state
+  - Step 0 is done. The dependencies are installed (pandas included) and .env is
+    complete.
+  - docker compose up -d is running, with db and llm healthy. The generator
+    needs neither.
+  - Nothing is committed. The user commits, and the message for this step is
+    feat: dirty orders CSV generator.
+  - conversations/ must never be read (CLAUDE.md hard constraint).
+  - Dependency manifests must not be edited, and the generator needs no new
+    dependencies.
+
+  Deliverables
+  - coding_assesment/scripts/__init__.py and scripts/generate_orders.py. The
+    generator uses only the standard library: random.Random(seed), csv, json,
+    argparse and dataclasses.
+  - generate_orders(seed, rows) -> (rows, DefectCounts) is pure, with no I/O.
+    main() takes --seed (default 42), --rows (default 1100, minimum 1000) and
+    --out (default data/orders_raw.csv).
+  - A second output, data/orders_raw.manifest.json, holds the injected-defect
+    counts. Step 2's cleaning tests can use these as ground truth.
+  - tests/test_generator.py checks determinism, at least 1,000 rows, and every
+    defect count above zero.
+  - After verification, tick step 1 in PLAN.md and add an AI-log row.
+
+  Defect shares
+  - Defects go on disjoint, randomly sampled row indices, so each count is
+    exact.
+  - Dates: about 8% DD/MM/YYYY, about 8% Mon DD, YYYY, and about 3% invalid.
+  - Amounts: about 4% $1,200.50 style and about 4% empty, N/A or garbage.
+  - Country: about 8% case or whitespace variants.
+  - Customer: about 4% case or whitespace variants.
+  - Status: about 4% case or whitespace variants, and about 2% invalid.
+  - Duplicates are about 8% of the file. Most are exact copies, plus a few that
+    differ only by case or whitespace. The file is shuffled at the end.
+
+  Decisions already made
+  - Only DD/MM/YYYY is generated, and always with day > 12, so it is
+    unambiguous.
+  - Dates, countries, statuses and the orders columns follow PLAN.md §0.
+  - Run it as uv run python -m scripts.generate_orders from coding_assesment/.
+
+  Done when
+  - Two runs with the same seed give identical sha256sum output, and a different
+    seed gives a different hash.
+  - The CSV has at least 1,001 lines (header included) and every manifest count
+    is above zero.
+  - uv run pytest tests/test_generator.py is green.
+  - git check-ignore data/orders_raw.csv confirms the file is ignored.
+  - uv run ruff check . && uv run ruff format --check . is clean.
+
+✻ Cogitated for 8s · done 7:27 PM

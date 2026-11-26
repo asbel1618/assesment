@@ -1,0 +1,267 @@
+ ▐▛███▛█   Claude Code v2.1.332
+▝▜██████▀  Sonnet 5.5 · Claude Pro
+ ▝▝   ▝▝   ~/projects/test/coding_assesment
+
+
+❯ /clear                                                                        
+
+❯ let's /plan how to implement step 5 of @coding_assesment/PLAN.md              
+  ⎿  Read coding_assesment/PLAN.md (175 lines)
+
+● Using superpowers:brainstorming to scope step 5 before entering plan mode.
+
+● Skill(superpowers:brainstorming)
+  ⎿  Loaded skill
+
+● Entered plan mode
+  Claude is exploring and planning an approach.
+
+  Read 4 files, ran 3 shell commands (ctrl+o to expand)
+
+● Probed sqlglot 30.35 against the attack cases; writing the plan now.
+
+● Updated plan
+  ⎿  /plan to preview
+
+● Approved Claude's plan
+  ⎿  Plan saved to: ~/.claude/plans/cached-riding-turtle-of-73227a25-6ec5-4a10-b
+     d96-8d4a1b08776a.md · /plan to edit
+     Step 5 — SQL validator (TDD)
+
+     Context
+
+     LLM output is untrusted. validate_sql is the main safety control between
+     the LLM (step 6) and execution (step 7); the app_ro role and read-only
+     transaction are the second layer. Spec: PLAN.md §4 step 5. It must be pure
+     (no DB, no network), importable, and covered by adversarial tests. Commit:
+     feat: SQL validator + tests.
+
+     Findings that shape the design (sqlglot 30.35.0, probed empirically)
+
+     - sqlglot.parse(sql, read="postgres") returns [None] for "", "   ", ";"; a
+       trailing ; gives one real statement; SELECT 1; DROP … gives two.
+     - Prose either raises ParseError (hello world how are you) or parses to a
+       non-query root (Total sales → Alias).
+     - Data-modifying CTE WITH x AS (DELETE FROM orders RETURNING *) SELECT * 
+       FROM x has a Select root → a root-type check alone is insufficient; the
+       whole tree must be walked.
+     - SELECT … INTO t → select.args["into"]; FOR UPDATE → args["locks"].
+     - Schema-qualified tables set Table.db (public.orders → db=public).
+     - Table functions in FROM (pg_read_file(...), ROWS FROM (...),
+       generate_series) are Table nodes whose this is not an Identifier; LATERAL
+       pg_ls_dir(...) shows up only as a function node.
+     - Functions Postgres-useful for this domain (sum, count, avg, round,
+       to_char, date_trunc, extract, date_part, coalesce, nullif, lower,
+       string_agg, casts) parse to typed exp.Func nodes; every dangerous one
+       probed (pg_sleep, pg_catalog.pg_sleep, pg_read_file, pg_ls_dir,
+       lo_import, dblink, set_config, current_setting, txid_current) parses to
+       exp.Anonymous.
+     - Comments survive on nodes (node.comments); 'a -- b' inside a string
+       literal is not a comment.
+     - VALUES (1) → Values; EXPLAIN … → Command; COPY → Copy.
+     - Unquoted identifiers: Postgres folds them to lowercase (Orders = orders).
+
+     Approach
+
+     Considered:
+     1. Regex / keyword denylist — rejected: bypassable (case, comments,
+        strings), the spec wants a parser.
+     2. sqlglot AST, function denylist (pg_sleep, pg_read_file, …) — fragile:
+        Postgres has hundreds of pg_*/admin functions; one missed name is a
+        hole.
+     3. sqlglot AST, closed-world allowlist (recommended) — allow only query
+        roots, only allowlisted unqualified tables (+ CTE names), and reject any
+        function sqlglot doesn't model (exp.Anonymous). A legitimate but
+        unmodelled function gets rejected → 400, which is the safe failure mode;
+        add names to an explicit allowlist only if real questions need them
+        (starts empty).
+
+     Design — app/validator.py
+
+     ALLOWED_TABLES = frozenset({"orders", "v_sales_by_month_country",
+     "v_top_customers"})
+
+     class InvalidSQLError(ValueError):
+         def __init__(self, reason: str) -> None: ...   # .reason used by the 
+     router (step 7) for the 400 body
+
+     def validate_sql(sql: str) -> str:   # returns ast.sql(dialect="postgres") 
+     or raises InvalidSQLError
+     Checks, in order (each raises with a specific reason string):
+     1. Parse with read="postgres"; ParseError → "could not parse SQL".
+     2. Drop None statements; 0 left → "empty query"; >1 → "multiple 
+        statements".
+     3. Root must be exp.Select or exp.SetOperation (UNION/INTERSECT/EXCEPT) →
+        else "only SELECT queries are allowed" (covers Drop, Update, Insert,
+        Copy, Command, Values, Alias).
+     4. Walk tree:
+        - any exp.Insert | Update | Delete | Merge → "data-modifying statement"
+          (data-modifying CTEs);
+        - any exp.Into / non-empty locks → "SELECT INTO / locking clauses not 
+          allowed";
+        - any node with comments → "comments not allowed".
+     5. Tables: CTE names = {cte.alias_or_name.lower() for cte in 
+        find_all(exp.CTE)}. For each exp.Table:
+        - this not an Identifier → "table functions not allowed";
+        - db or catalog set → "schema-qualified names not allowed" (blocks
+          pg_catalog.x, information_schema.x, public.orders);
+        - name (lowercased if unquoted, exact if quoted) ∉ ALLOWED_TABLES ∪ 
+          cte_names → "table not allowed: <name>" (blocks unqualified pg_user,
+          pg_roles, pg_tables too, also inside subqueries/CTE bodies).
+     6. Functions: any exp.Anonymous whose lowercased name ∉
+        _ALLOWED_EXTRA_FUNCTIONS (empty frozenset) → "function not allowed: 
+        <name>".
+     7. Return normalized SQL.
+
+     Out of scope here (step 7): row LIMIT, statement_timeout, read-only
+     transaction. A huge generate_series in the select list is a DoS concern
+     handled by statement_timeout, not the validator.
+
+     Tests first — tests/test_validator.py
+
+     Run red (ModuleNotFoundError: app.validator), then implement to green.
+     - Valid (parametrized, assert returns a str): plain select from each
+       allowed object; aggregation + GROUP BY + to_char/extract; join orders ↔
+       v_top_customers; CTE over orders; subquery over allowed table; UNION of
+       allowed; trailing ;; mixed-case Orders.
+     - Invalid (parametrized (sql, reason_fragment), assert InvalidSQLError and
+       reason): "", "   ", ";", prose (both parse-error and Alias shapes), DROP 
+       TABLE orders, UPDATE …, INSERT …, DELETE …, SELECT 1; DROP TABLE orders,
+       SELECT * FROM orders; SELECT 1, SELECT * INTO t FROM orders, FOR UPDATE,
+       data-modifying CTE, COPY, EXPLAIN, VALUES, pg_catalog.pg_user,
+       information_schema.tables, public.orders, unqualified pg_user, disallowed
+       table inside subquery / CTE body / IN (SELECT …), CTE shadowing orders
+       over a forbidden table, pg_sleep, pg_catalog.pg_sleep, set_config,
+       pg_read_file in FROM, LATERAL pg_ls_dir, -- comment, /* comment */.
+     - Literal 'a -- b' is accepted (no false positive on comments).
+
+     Files
+
+     - New: app/validator.py, tests/test_validator.py.
+     - Edit: PLAN.md (tick step 5, append §8 AI log row).
+     - No dependency changes (sqlglot already declared).
+
+     Verification
+
+     uv run pytest tests/test_validator.py      # red first, then green
+     uv run pytest                              # whole suite still green
+     uv run ruff check . && uv run ruff format .
+     Commit only when the user asks.
+
+● Write(tests/test_validator.py)
+  ⎿  Wrote 94 lines to tests/test_validator.py
+       1 import pytest
+       2 
+       3 from app.validator import InvalidSQLError, validate_sql
+       4 
+       5 VALID_QUERIES = [
+       6     "SELECT * FROM orders",
+       7     "SELECT * FROM v_sales_by_month_country",
+       8     "SELECT * FROM v_top_customers",
+       9     "SELECT * FROM orders;",
+      10     "SELECT * FROM Orders",
+     … +84 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Write(app/validator.py)
+  ⎿  Wrote 78 lines to app/validator.py
+       1 """Pure validation of LLM-generated SQL (no I/O, no database).
+       2 
+       3 Closed-world policy: a query is accepted only if it is a single
+         read-only
+       4 SELECT over the allowlisted tables/views (unqualified names) and
+          uses only
+       5 functions that sqlglot models natively. Anything else is rejecte
+         d, so an
+       6 unknown construct fails safe. The ``app_ro`` role is the second
+         layer.
+     … +72 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Tests pass, but the global CTE-name set has a scoping hole: a CTE defined in
+  one subquery could mask a real pg_user used elsewhere. I'll make it
+  scope-aware and add a test.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Update(PLAN.md)
+  ⎿  Added 1 line, removed 1 line
+      119  - [x] **4. Views** — `views.sql`: `v_sales_by_month_country` (
+           `to_char(order_date,'YYYY-MM')`), `v_top_customers` (`LIMIT 10
+           `); applied by loader; grant `SELECT` to `app_ro`.
+      120    `feat: sales and top-customer views`
+      121    *Why:* spec deliverable and the only objects (with `orders`)
+            the LLM may query. *Done when:* both views return expected ro
+           ws on the loaded data (spot-check one month/country sum agains
+           t a manual query); `app_ro` can select from them; sales defini
+           tion (`completed` only) is commented in `views.sql`.
+      122 -- [ ] **5. Validator (TDD)** — `validator.py` with `sqlglot`. 
+          -Reject non-SELECT, multiple statements, tables outside `{order
+          -s, v_sales_by_month_country, v_top_customers}`, CTE/subquery s
+          -muggling, `pg_catalog`/`information_schema`, schema-qualified 
+          -names, `INTO`, `FOR UPDATE`, dangerous functions (`pg_read_fil
+          -e`, `set_config`, `pg_sleep`, …), comments. Adversarial cases 
+          -in `tests/test_validator.py`.                                 
+      122 +- [x] **5. Validator (TDD)** — `validator.py` with `sqlglot`. 
+          +Reject non-SELECT, multiple statements, tables outside `{order
+          +s, v_sales_by_month_country, v_top_customers}`, CTE/subquery s
+          +muggling, `pg_catalog`/`information_schema`, schema-qualified 
+          +names, `INTO`, `FOR UPDATE`, dangerous functions (`pg_read_fil
+          +e`, `set_config`, `pg_sleep`, …), comments. Adversarial cases 
+          +in `tests/test_validator.py`.                                 
+      123    `feat: SQL validator + tests`
+      124    *Why:* the central safety control; LLM output is untrusted.
+           *Done when:* pure function `validate_sql(sql) -> str` (returns
+            normalized SQL or raises `InvalidSQLError(reason)`); tests in
+           clude valid cases (plain select, aggregation, join between all
+           owed objects, CTE over allowed tables) and attacks (`DROP`, `;
+           ` stacking, `UPDATE`, `SELECT … INTO`, `pg_catalog`/`informati
+           on_schema`, `public.orders` qualified, `pg_sleep`, comments, e
+           mpty string, non-SQL prose).
+      125  - [ ] **6. LLM client** — `LLMClient` protocol + httpx impl ag
+           ainst llama.cpp; prompt with allowed schema only; strip fences
+           /thinking; typed errors (unreachable, timeout, empty).
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 5 is implemented and all 91 tests pass, including the 53 validator cases.
+  ruff check and ruff format are clean. Nothing is committed.
+
+  - app/validator.py: validate_sql(sql) returns the normalized SQL or raises
+    InvalidSQLError(reason). It accepts only a single SELECT or UNION-style
+    query.
+    - Tables: unqualified names from the allowlist (orders,
+      v_sales_by_month_country, v_top_customers).
+    - Functions: any function sqlglot doesn't model (for example pg_sleep,
+      pg_read_file, set_config) is rejected, because the list of extra allowed
+      functions is empty.
+    - Other rejections: comments, INTO, locking clauses, data-modifying CTEs,
+      and table functions.
+  - tests/test_validator.py: written first and run red (ModuleNotFoundError),
+    then green. It covers the valid and attack cases from the plan, plus a check
+    that 'a -- b' inside a string is not treated as a comment.
+  - A bug I fixed while implementing: my first version collected CTE names
+    globally. A CTE defined inside one subquery could then have masked a real
+    pg_user used elsewhere. It now resolves CTEs per scope, and a regression
+    test covers it.
+  - PLAN.md: step 5 is ticked and the AI-log row is added.
+
+  A legitimate query using a function sqlglot doesn't model will return a 400.
+  If real questions hit that, add the function name to ALLOWED_EXTRA_FUNCTIONS
+  in app/validator.py.
+
+  Suggested commit message: feat: SQL validator + tests.
+
+✻ Cogitated for 2m 32s · done 8:47 PM
+
+❯ commit this                                                                   
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Committed as 69ca242 (feat: SQL validator + tests). It contains PLAN.md,
+  app/validator.py and tests/test_validator.py. The untracked 5.txt,
+  conversations/ and orders_sample_file.csv were left out.
+
+✻ Baked for 3s · done 8:47 PM
