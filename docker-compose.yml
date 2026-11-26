@@ -2,21 +2,22 @@ name: test
 
 services:
   llm:
-    image: ghcr.io/ggml-org/llama.cpp:server-intel
+    # Host-specific values are overridable via .env (see .env.example); defaults match the dev host.
+    image: ${LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-intel}
     restart: unless-stopped
     devices:
       - /dev/dri:/dev/dri
     group_add:
-      - "987" # render (host GID)
-      - "983" # video (host GID)
+      - "${RENDER_GID:-987}" # render (host GID)
+      - "${VIDEO_GID:-983}" # video (host GID)
     volumes:
-      - /home/asbel/models:/models:ro
+      - ${MODEL_DIR:-/home/asbel/models}:/models:ro
     ports:
       - "127.0.0.1:8080:8080" # host access only; other services use http://llm:8080
     entrypoint: ["/app/llama-server"]
     command:
       - -m
-      - /models/Qwen3.5-9B-UD-Q4_K_XL.gguf
+      - /models/${LLM_MODEL_FILE:-Qwen3.5-9B-UD-Q4_K_XL.gguf}
       - --jinja
       - -ngl
       - "99"

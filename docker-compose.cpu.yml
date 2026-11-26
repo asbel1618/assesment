@@ -1,0 +1,8 @@
+# CPU-only override for hosts without an Intel GPU (/dev/dri).
+# docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d --build
+# Not exercised on the dev host (Intel GPU); only the rendered config is verified.
+services:
+  llm:
+    image: ${LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}
+    devices: !reset []
+    group_add: !reset []
