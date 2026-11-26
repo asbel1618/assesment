@@ -21,14 +21,15 @@ Contents: [Run with Docker Compose](#run-with-docker-compose) · [Local developm
 
 ## Run with Docker Compose
 
-Prerequisites: Docker with Compose v2.24+, and a GGUF model file (the default is `Qwen3.5-9B-UD-Q4_K_XL.gguf`).
+Prerequisites: Docker with Compose v2.24+, and an OpenAI-compatible LLM endpoint (hosted, or the bundled local llama.cpp, see [Local LLM](#local-llm-optional)).
 
 ```bash
 cp .env.example .env
-# fill POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, APP_RO_PASSWORD
+# fill POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, APP_RO_PASSWORD,
+# LLM_BASE_URL and, if the provider needs them, LLM_API_KEY and LLM_MODEL
 # (the *_URL variables are only needed for local development, see below)
 
-docker compose up -d --build        # llm, db, api; waits for healthchecks
+docker compose up -d --build        # db, api; waits for the db healthcheck
 docker compose run --rm loader      # generate dirty CSV, clean, load into Postgres
 
 curl -s -X POST localhost:8000/query -H 'content-type: application/json' \
@@ -41,11 +42,22 @@ curl -s -X POST localhost:8000/query -H 'content-type: application/json' \
 
 Or open http://127.0.0.1:8000/ui: an **Ask** tab to query in the browser and a **Debug** tab with the request/response log and error log.
 
-The first start takes a while: `llm` loads the model (healthcheck `start_period` is 120 s) and `api` waits for it. The loader is idempotent: running it again reloads the same 917 rows.
+The loader is idempotent: running it again reloads the same 917 rows.
 
-### Host-specific `llm` settings
+### Local LLM (optional)
 
-The compose file was written for an Intel-GPU host. Defaults match that host; override them in `.env`:
+`docker-compose.yml` has no `llm` service: the API calls whatever `LLM_BASE_URL` points to (`LLM_API_KEY`, `LLM_MODEL` and `LLM_DISABLE_THINKING` are optional; the last one sends llama.cpp's `chat_template_kwargs` and must stay unset for providers that reject unknown fields, such as OpenAI). To run llama.cpp locally instead, use `docker-compose-local-llm.yaml`, which adds an `llm` service, points `api` at it and waits for it to be healthy. It needs a GGUF model file (default `Qwen3.5-9B-UD-Q4_K_XL.gguf`) and ignores the `LLM_*` variables in `.env`:
+
+```bash
+docker compose -f docker-compose-local-llm.yaml up -d --build
+docker compose -f docker-compose-local-llm.yaml run --rm loader
+```
+
+An LLM server running on the host (not in compose) is reachable from the `api` container at `http://host.docker.internal:8080/v1` (`extra_hosts` maps it on Linux); use that as `LLM_BASE_URL` when running `api` in compose, and `127.0.0.1` when running the API on the host.
+
+The first start takes a while: `llm` loads the model (healthcheck `start_period` is 120 s) and `api` waits for it.
+
+The local file was written for an Intel-GPU host. Defaults match that host; override them in `.env`:
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -57,17 +69,17 @@ The compose file was written for an Intel-GPU host. Defaults match that host; ov
 No Intel GPU: add the CPU override, which drops the `/dev/dri` mapping and uses the plain server image.
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d --build
+docker compose -f docker-compose-local-llm.yaml -f docker-compose.cpu.yml up -d --build
 ```
 
 The CPU override was only checked by rendering the config (`docker compose config`), not run, since the dev host has the Intel GPU. A 9B model on CPU will be slow; the client timeout may need raising.
 
 ## Local development
 
-Run infra in compose, the API on the host. The app reads only `os.environ` (no dotenv loader), so pass the file with `--env-file`. Set the URLs in `.env` with host-style addresses (`127.0.0.1`).
+Run infra in compose, the API on the host. The app reads only `os.environ` (no dotenv loader), so pass the file with `--env-file`. Set the URLs in `.env` with host-style addresses (`127.0.0.1`). With the bundled llama.cpp, also set `LLM_DISABLE_THINKING=true` in `.env` (the local compose file only sets it for the container).
 
 ```bash
-docker compose up -d db llm
+docker compose up -d db                  # LLM: any endpoint via LLM_BASE_URL, or `docker compose -f docker-compose-local-llm.yaml up -d db llm`
 cd coding_assesment
 uv sync
 uv run --env-file ../.env python -m scripts.generate_orders   # data/orders_raw.csv
@@ -98,7 +110,7 @@ Errors share one body, `{code, message, sql}` (`sql` set when the LLM's SQL was 
 ## Project layout
 
 ```
-docker-compose.yml  docker-compose.cpu.yml  docker/postgres/init/01-readonly-role.sh
+docker-compose.yml  docker-compose-local-llm.yaml  docker-compose.cpu.yml  docker/postgres/init/01-readonly-role.sh
 coding_assesment/
 ├── main.py                      thin entrypoint
 ├── app/
