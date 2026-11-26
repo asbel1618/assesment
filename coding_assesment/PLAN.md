@@ -106,7 +106,7 @@ API contract:
 - [x] **0. Init** — root `.gitignore` (`.env`, `data/`, `.venv`, `__pycache__/`; supersedes the inner one, which is removed or kept as-is), root `.env.example` (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `APP_RO_PASSWORD`, `LLM_BASE_URL`, `DATABASE_URL`, `READONLY_DATABASE_URL`). Compose `db` service is already added. User runs deps (see §5). First commit also tracks `CLAUDE.md` and `docker-compose.yml`.
   `chore: gitignore, env example, deps`
   *Why:* nothing may leak (secrets) and dependencies must exist before code. *Done when:* `git status` shows `.env` ignored; `.env.example` lists every var in §0; user confirmed `uv add` ran; `uv run python -c "import fastapi, sqlalchemy, psycopg, sqlglot"` succeeds.
-- [ ] **1. Generator** — `scripts/generate_orders.py`, seeded, ~1,100 rows. Inject: exact duplicates, multiple date formats + typos/invalid dates, empty/garbage amounts; also country casing, whitespace, invalid status.
+- [x] **1. Generator** — `scripts/generate_orders.py`, seeded, ~1,100 rows. Inject: exact duplicates, multiple date formats + typos/invalid dates, empty/garbage amounts; also country casing, whitespace, invalid status.
   `feat: dirty orders CSV generator`
   *Why:* reproducible dirty input so the cleaning tests and README numbers are stable. *Done when:* same seed ⇒ identical file; ≥1,000 rows; a quick script/test counts each defect type > 0; output goes to `data/orders_raw.csv` (gitignored).
 - [ ] **2. Cleaning (TDD)** — pure `clean_orders()`: dedupe, parse dates (drop/flag unparseable), coerce amounts, normalize text/status. `tests/test_cleaning.py` first.
@@ -168,3 +168,4 @@ uv add --dev pytest ruff
 |---|---|---|---|
 | planning | Assessment breakdown, target layout, step list | Layered layout, validator + read-only role as defense in depth | User chose local llama.cpp over a hosted API, `sqlglot`, SQLAlchemy, then PostgreSQL instead of SQLite; plan updated accordingly |
 | 0 | Init scaffolding: root `.gitignore`, `.env.example`, dependency install, `.env` variables | Ignore rules and env example as proposed; AI ran `uv add` after explicit user authorization | User kept `pandas` (to showcase real data work, over stdlib `csv`); rejected ignoring `conversations/` (transcripts are for the reviewer); AI generated `APP_RO_PASSWORD` and built DB URLs locally without echoing secrets |
+| 1 | Seeded dirty-CSV generator (stdlib only) + determinism/defect-coverage tests | Plan as proposed: one defect per base row, ~8% exact dupes, `random.Random(seed)` only | `$1,200.50` amounts: AI flagged the conflict with the reject-invalid policy; user decided to parse them (step 2 must strip `$`/`,`); only empty/`N/A`/non-numeric are rejected |
