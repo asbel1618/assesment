@@ -56,8 +56,50 @@ def test_generate_sql_returns_content_and_sends_deterministic_payload() -> None:
     assert str(request.url) == f"{BASE_URL}/chat/completions"
     payload = json.loads(request.content)
     assert payload["temperature"] == 0
-    assert payload["chat_template_kwargs"] == {"enable_thinking": False}
+    assert "chat_template_kwargs" not in payload
     assert payload["messages"][-1] == {"role": "user", "content": "how many orders?"}
+
+
+def test_api_key_and_model_are_sent_when_configured() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=_completion(SQL))
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    LlamaCppClient(BASE_URL, http=http, api_key="sk-test", model="m1").generate_sql("q")
+
+    assert seen[0].headers["authorization"] == "Bearer sk-test"
+    assert json.loads(seen[0].content)["model"] == "m1"
+
+
+def test_no_auth_header_or_model_by_default() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=_completion(SQL))
+
+    _client(handler).generate_sql("q")
+
+    assert "authorization" not in seen[0].headers
+    assert "model" not in json.loads(seen[0].content)
+
+
+def test_disable_thinking_sends_chat_template_kwargs() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=_completion(SQL))
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    LlamaCppClient(BASE_URL, http=http, disable_thinking=True).generate_sql("q")
+
+    assert json.loads(seen[0].content)["chat_template_kwargs"] == {
+        "enable_thinking": False
+    }
 
 
 def test_base_url_trailing_slash_is_tolerated() -> None:
@@ -183,3 +225,29 @@ def test_factory_requires_llm_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LLM_BASE_URL", raising=False)
     with pytest.raises(RuntimeError, match="LLM_BASE_URL"):
         create_llm_client_from_env()
+
+
+def test_factory_reads_optional_api_key_and_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_BASE_URL", BASE_URL)
+    monkeypatch.setenv("LLM_API_KEY", "sk-env")
+    monkeypatch.setenv("LLM_MODEL", "m-env")
+    monkeypatch.setenv("LLM_DISABLE_THINKING", "true")
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=_completion(SQL))
+
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        "app.llm.client.httpx.Client",
+        lambda **_: real_client(transport=httpx.MockTransport(handler)),
+    )
+    create_llm_client_from_env().generate_sql("q")
+
+    assert seen[0].headers["authorization"] == "Bearer sk-env"
+    payload = json.loads(seen[0].content)
+    assert payload["model"] == "m-env"
+    assert payload["chat_template_kwargs"] == {"enable_thinking": False}
