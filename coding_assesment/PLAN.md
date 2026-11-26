@@ -15,6 +15,7 @@ Update the checkboxes as steps land.
 3. TDD for steps 2 and 5 (tests before implementation).
 4. Keep a running note of AI interactions (asked / accepted / corrected) for the README; append to §8 as you go.
 5. Commands run from `coding_assesment/`; compose commands run from the repo root `test/`.
+6. Scripts import from `app/`, so run them as modules from `coding_assesment/`: `uv run python -m scripts.generate_orders` (never `python scripts/generate_orders.py`, which fails with `ModuleNotFoundError: app`). Same for `scripts.load_orders`; in compose: `docker compose run --rm api python -m scripts.load_orders`.
 
 **Data contract (decided defaults; change only with user approval):**
 
@@ -109,7 +110,7 @@ API contract:
 - [x] **1. Generator** — `scripts/generate_orders.py`, seeded, ~1,100 rows. Inject: exact duplicates, multiple date formats + typos/invalid dates, empty/garbage amounts; also country casing, whitespace, invalid status.
   `feat: dirty orders CSV generator`
   *Why:* reproducible dirty input so the cleaning tests and README numbers are stable. *Done when:* same seed ⇒ identical file; ≥1,000 rows; a quick script/test counts each defect type > 0; output goes to `data/orders_raw.csv` (gitignored).
-- [ ] **2. Cleaning (TDD)** — pure `clean_orders()`: dedupe, parse dates (drop/flag unparseable), coerce amounts, normalize text/status. `tests/test_cleaning.py` first.
+- [x] **2. Cleaning (TDD)** — pure `clean_orders()`: dedupe, parse dates (drop/flag unparseable), coerce amounts, normalize text/status. `tests/test_cleaning.py` first.
   `feat: cleaning logic + tests`
   *Why:* pure logic is the most testable part and the spec requires a cleaning test. *Done when:* `test_cleaning.py` covers duplicates, each bad-date class, empty/garbage amounts, casing/whitespace, invalid status; `clean_orders` returns `(clean_df, rejects_df)` with reasons; no I/O or DB inside it.
 - [ ] **3. DB + loader** — `docker/postgres/init/01-readonly-role.sh` (creates `app_ro`, default privileges, read-only/timeout settings) mounted into `db` in compose. `scripts/load_orders.py`: read → clean → Postgres in one transaction (drop/recreate or `TRUNCATE` + insert; idempotent); log dropped counts per defect type.
@@ -130,7 +131,7 @@ API contract:
 - [ ] **8. Endpoint test** — `dependency_overrides` for fake LLM and fake repository (no Postgres or network needed): happy path, invalid SQL from LLM, LLM exception, empty question.
   `test: endpoint with mocked LLM`
   *Why:* spec requires an endpoint test with the LLM mocked; it must be hermetic. *Done when:* `uv run pytest` passes with Postgres and the LLM stopped; asserts status codes and error bodies, not just the happy path.
-- [ ] **9. Containerize** — `coding_assesment/Dockerfile` (uv, Python 3.14), `.dockerignore`; add `api` service to `docker-compose.yml`: `build: ./coding_assesment`, `depends_on` both `llm` and `db` with `condition: service_healthy`, `networks: [backend]`, `LLM_BASE_URL=http://llm:8080/v1`, `DATABASE_URL`/`READONLY_DATABASE_URL` pointing at `db:5432`, port `127.0.0.1:8000:8000`. Data scripts run via `docker compose run --rm api python scripts/...` (or locally against `127.0.0.1:5432`). Data is loaded by the loader into the `pgdata` volume, not baked into any image.
+- [ ] **9. Containerize** — `coding_assesment/Dockerfile` (uv, Python 3.14), `.dockerignore`; add `api` service to `docker-compose.yml`: `build: ./coding_assesment`, `depends_on` both `llm` and `db` with `condition: service_healthy`, `networks: [backend]`, `LLM_BASE_URL=http://llm:8080/v1`, `DATABASE_URL`/`READONLY_DATABASE_URL` pointing at `db:5432`, port `127.0.0.1:8000:8000`. Data scripts run via `docker compose run --rm api python -m scripts.<name>` (or locally against `127.0.0.1:5432`). Data is loaded by the loader into the `pgdata` volume, not baked into any image.
   `feat: run API as compose service`
   *Why:* user decision: the API runs inside compose with `llm` and `db`. *Done when:* `docker compose up --build` from a clean volume brings up all services healthy; loader runs through `docker compose run --rm api …`; the endpoint answers from the host on `127.0.0.1:8000`.
 - [ ] **10. Docs + lint** — README (run via `docker compose up`, local dev alternative, decisions, with-more-time, AI log); `ruff check` + `ruff format`.
@@ -169,3 +170,4 @@ uv add --dev pytest ruff
 | planning | Assessment breakdown, target layout, step list | Layered layout, validator + read-only role as defense in depth | User chose local llama.cpp over a hosted API, `sqlglot`, SQLAlchemy, then PostgreSQL instead of SQLite; plan updated accordingly |
 | 0 | Init scaffolding: root `.gitignore`, `.env.example`, dependency install, `.env` variables | Ignore rules and env example as proposed; AI ran `uv add` after explicit user authorization | User kept `pandas` (to showcase real data work, over stdlib `csv`); rejected ignoring `conversations/` (transcripts are for the reviewer); AI generated `APP_RO_PASSWORD` and built DB URLs locally without echoing secrets |
 | 1 | Seeded dirty-CSV generator (stdlib only) + determinism/defect-coverage tests | Plan as proposed: one defect per base row, ~8% exact dupes, `random.Random(seed)` only | `$1,200.50` amounts: AI flagged the conflict with the reject-invalid policy; user decided to parse them (step 2 must strip `$`/`,`); only empty/`N/A`/non-numeric are rejected |
+| 2 | TDD cleaning: `app/cleaning.py` (`clean_orders`), tests first (red: `ModuleNotFoundError`), then green | `COUNTRIES`/`VALID_STATUSES` owned by `app/cleaning.py` and imported by the generator; duplicates go to rejects as `duplicate`; multi-reason rejects `;`-joined; `Decimal` amounts | Importing `app` from the generator means it must now run as `uv run python -m scripts.generate_orders` (direct `python -m scripts.<name>` fails); output verified byte-identical. Real CSV: 1080 rows -> 917 clean, 80 duplicate, 38 invalid_date, 29 missing_amount, 16 invalid_status |

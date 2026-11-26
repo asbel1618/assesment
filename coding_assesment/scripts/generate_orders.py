@@ -10,18 +10,9 @@ import random
 from collections.abc import Sequence
 from pathlib import Path
 
+from app.cleaning import COUNTRIES, VALID_STATUSES
+
 COLUMNS = ("date", "customer", "country", "product", "amount", "status")
-COUNTRIES = (
-    "Spain",
-    "France",
-    "Germany",
-    "Italy",
-    "Portugal",
-    "UK",
-    "USA",
-    "Mexico",
-)
-VALID_STATUSES = ("completed", "pending", "cancelled", "refunded")
 STATUS_WEIGHTS = (75, 10, 10, 5)
 INVALID_STATUSES = ("shipped", "COMPLETED?", "unknown")
 # product -> (min, max) unit price in cents
