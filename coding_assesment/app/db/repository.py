@@ -12,6 +12,11 @@ from app.schemas import Cell
 MAX_ROWS = 1000
 STATEMENT_TIMEOUT = "5s"
 _QUERY_CANCELED = "57014"
+# SQLSTATE classes that are server-side outages, not faults of the statement:
+# 08 connection exception, 53 insufficient resources, 57 operator intervention.
+_OUTAGE_CLASSES = ("08", "53", "57")
+# The allowlisted objects are missing or unreadable: a deployment problem.
+_SETUP_SQLSTATES = ("42P01", "42501")
 
 
 class QueryExecutionError(Exception):
@@ -79,6 +84,12 @@ def _map_error(exc: DBAPIError) -> QueryExecutionError:
         return QueryTimeoutError("the query exceeded the time limit")
     if sqlstate is None and isinstance(exc, OperationalError | InterfaceError):
         return DatabaseUnavailableError("the database is unavailable")
+    if sqlstate and sqlstate.startswith(_OUTAGE_CLASSES):
+        return DatabaseUnavailableError("the database is unavailable")
+    if sqlstate in _SETUP_SQLSTATES:
+        return QueryExecutionError(
+            f"the database is not set up for this query (SQLSTATE {sqlstate})"
+        )
     detail = f" (SQLSTATE {sqlstate})" if sqlstate else ""
     return QueryFailedError(f"the database rejected the query{detail}")
 
