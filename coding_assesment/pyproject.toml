@@ -21,3 +21,4 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = ["integration: needs a real PostgreSQL (DATABASE_URL, READONLY_DATABASE_URL)"]
