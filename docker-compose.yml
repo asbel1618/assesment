@@ -1,0 +1,74 @@
+name: test
+
+services:
+  llm:
+    image: ghcr.io/ggml-org/llama.cpp:server-intel
+    restart: unless-stopped
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "987" # render (host GID)
+      - "983" # video (host GID)
+    volumes:
+      - /home/asbel/models:/models:ro
+    ports:
+      - "127.0.0.1:8080:8080" # host access only; other services use http://llm:8080
+    entrypoint: ["/app/llama-server"]
+    command:
+      - -m
+      - /models/Qwen3.5-9B-UD-Q4_K_XL.gguf
+      - --jinja
+      - -ngl
+      - "99"
+      - -c
+      - "16384"
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s # model load from local disk
+    deploy:
+      resources:
+        limits:
+          memory: 12g
+    networks:
+      - backend
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-orders}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-orders}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432" # host access only; other services use db:5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - backend
+
+  # Add further services below. Reach the model at http://llm:8080/v1 (OpenAI-compatible),
+  # and gate startup with:
+  #   depends_on:
+  #     llm:
+  #       condition: service_healthy
+  #     db:
+  #       condition: service_healthy
+  #   networks: [backend]
+
+networks:
+  backend:
+
+volumes:
+  pgdata:
