@@ -16,6 +16,7 @@ from app.db.connection import create_engine_from_env
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_SQL = ROOT / "app" / "db" / "schema.sql"
+VIEWS_SQL = ROOT / "app" / "db" / "views.sql"
 INSERT_SQL = text(
     "INSERT INTO orders (order_date, customer, country, product, amount, status) "
     "VALUES (:order_date, :customer, :country, :product, :amount, :status)"
@@ -26,6 +27,7 @@ def load_clean_orders(engine: Engine, clean: pd.DataFrame) -> int:
     """Replace the contents of ``orders`` in one transaction; return the row count."""
     with engine.begin() as conn:
         conn.execute(text(SCHEMA_SQL.read_text(encoding="utf-8")))
+        conn.execute(text(VIEWS_SQL.read_text(encoding="utf-8")))
         # TRUNCATE (not DROP) so dependent views (step 4) survive reloads.
         conn.execute(text("TRUNCATE orders RESTART IDENTITY"))
         if not clean.empty:
