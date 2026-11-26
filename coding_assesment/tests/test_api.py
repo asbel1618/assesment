@@ -167,3 +167,11 @@ def test_invalid_question_is_422_and_never_reaches_the_llm(
 
     assert response.status_code == 422
     assert llm.calls == []
+
+
+def test_ui_page_is_served() -> None:
+    response = TestClient(create_app()).get("/ui")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "<title>" in response.text

@@ -32,6 +32,8 @@ curl -s -X POST localhost:8000/query -H 'content-type: application/json' \
 {"question":"how much did we sell in Spain in March?","sql":"SELECT total_amount FROM v_sales_by_month_country WHERE country = 'Spain' AND month = '2025-03'","columns":["total_amount"],"rows":[["8084.52"]],"truncated":false}
 ```
 
+Or open http://127.0.0.1:8000/ui: an **Ask** tab to query in the browser and a **Debug** tab with the request/response log and error log.
+
 The first start takes a while: `llm` loads the model (healthcheck `start_period` is 120 s) and `api` waits for it. The loader is idempotent: running it again reloads the same 917 rows.
 
 ### Host-specific `llm` settings
@@ -98,6 +100,7 @@ coding_assesment/
 │   ├── services/query_service.py  question -> LLM -> validate -> execute
 │   ├── dependencies.py          lazy providers (importing the app needs no env)
 │   ├── llm/{base,prompt,client}.py  LLMClient protocol, prompt, httpx impl
+│   ├── static/index.html        browser UI served at /ui
 │   ├── validator.py             pure SQL validator
 │   ├── cleaning.py              pure clean_orders()
 │   ├── db/{connection,repository}.py, schema.sql, views.sql

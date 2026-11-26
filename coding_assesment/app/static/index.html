@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orders Q&amp;A</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --surface: #fff; --text: #1c2330; --muted: #667085;
+    --border: #d9dee7; --accent: #2457d6; --accent-text: #fff;
+    --ok: #1a7f4b; --warn: #a15c00; --err: #b42318; --err-bg: #fef3f2;
+    --code-bg: #f0f2f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --surface: #1a1f28; --text: #e6e9ef; --muted: #9aa4b5;
+      --border: #2d3441; --accent: #6b93ff; --accent-text: #0b1020;
+      --ok: #4cc38a; --warn: #f0b04a; --err: #ff8a80; --err-bg: #2b1a19;
+      --code-bg: #232937;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 16px; background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  h1 { font-size: 17px; margin: 0; }
+  #health { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+  #health i { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  #health.up i { background: var(--ok); }
+  #health.down i { background: var(--err); }
+  nav { margin-left: auto; display: flex; gap: 4px; }
+  nav button {
+    background: none; border: 1px solid transparent; border-radius: 6px;
+    padding: 6px 12px; color: var(--muted); cursor: pointer; font: inherit;
+  }
+  nav button[aria-selected="true"] { color: var(--text); border-color: var(--border); background: var(--bg); }
+  .badge {
+    display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px;
+    border-radius: 9px; background: var(--err); color: #fff; font-size: 12px; text-align: center;
+  }
+  .badge[hidden] { display: none; }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+  section[hidden] { display: none; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+  textarea, input[type=text] {
+    width: 100%; font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px;
+  }
+  textarea { resize: vertical; min-height: 72px; }
+  textarea.mono, pre { font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  .row .grow { flex: 1; }
+  button.primary, button.secondary {
+    font: inherit; border-radius: 6px; padding: 7px 14px; cursor: pointer; border: 1px solid var(--border);
+  }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button.secondary { background: var(--surface); color: var(--text); }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  .chip {
+    font: inherit; font-size: 13px; padding: 3px 10px; border-radius: 14px; cursor: pointer;
+    background: var(--code-bg); color: var(--text); border: 1px solid var(--border);
+  }
+  .muted { color: var(--muted); font-size: 13px; }
+  .spinner {
+    width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin .8s linear infinite; display: none;
+  }
+  .busy .spinner { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  pre { background: var(--code-bg); border-radius: 6px; padding: 10px; overflow-x: auto; margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; }
+  .error { background: var(--err-bg); border-color: var(--err); }
+  .error h3 { margin: 0 0 4px; color: var(--err); font-size: 15px; }
+  .banner { color: var(--warn); font-size: 13px; margin-bottom: 6px; }
+  details summary { cursor: pointer; color: var(--muted); }
+  ul.recent { list-style: none; margin: 0; padding: 0; }
+  ul.recent li { padding: 3px 0; }
+  ul.recent button { background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; padding: 0; text-align: left; }
+  tr.log-row { cursor: pointer; }
+  tr.log-row:hover td { background: var(--code-bg); }
+  .s-ok { color: var(--ok); } .s-err { color: var(--err); }
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 640px) { .detail-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Orders Q&amp;A</h1>
+  <span id="health" title="not checked yet"><i></i><span>checking…</span></span>
+  <nav role="tablist">
+    <button role="tab" id="tab-ask" aria-selected="true" aria-controls="panel-ask">Ask</button>
+    <button role="tab" id="tab-debug" aria-selected="false" aria-controls="panel-debug">Debug<span class="badge" id="err-badge" hidden>0</span></button>
+  </nav>
+</header>
+
+<main>
+  <section id="panel-ask" role="tabpanel" aria-labelledby="tab-ask">
+    <form class="card" id="ask-form">
+      <label for="question" class="muted">Ask a question about the orders</label>
+      <textarea id="question" maxlength="500" placeholder="How much did we sell in Spain in March?"></textarea>
+      <div class="row" id="chips"></div>
+      <div class="row" id="ask-actions">
+        <button class="primary" type="submit" id="submit">Ask</button>
+        <span class="spinner" aria-hidden="true"></span>
+        <span class="muted grow" id="counter">0 / 500</span>
+      </div>
+    </form>
+    <div id="result"></div>
+    <div class="card" id="recent-card" hidden>
+      <div class="muted">Recent questions</div>
+      <ul class="recent" id="recent"></ul>
+    </div>
+  </section>
+
+  <section id="panel-debug" role="tabpanel" aria-labelledby="tab-debug" hidden>
+    <div class="card">
+      <div class="row" style="margin-top:0">
+        <label><input type="checkbox" id="errors-only"> errors only</label>
+        <span class="muted grow" id="log-count"></span>
+        <button class="secondary" id="ping">Ping /health</button>
+        <button class="secondary" id="export">Export JSON</button>
+        <button class="secondary" id="clear">Clear</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Request</th><th>Status</th><th>ms</th><th>Error code</th></tr></thead>
+          <tbody id="log-body"></tbody>
+        </table>
+      </div>
+      <div class="muted" id="log-empty">No requests yet.</div>
+    </div>
+    <div class="card">
+      <label for="raw" class="muted">Raw request: JSON body sent to POST /query (try <code>{"question": ""}</code> or invalid JSON)</label>
+      <textarea id="raw" class="mono">{"question": "Top 10 customers by purchases"}</textarea>
+      <div class="row"><button class="secondary" id="raw-send">Send</button></div>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+const EXAMPLES = [
+  "How much did we sell in Spain in March?",
+  "Top 10 customers by purchases",
+  "Monthly sales in France",
+  "Which country sold the most in 2025?",
+];
+const LOG_LIMIT = 200;
+const RECENT_KEY = "recentQuestions";
+
+const $ = (id) => document.getElementById(id);
+const log = [];
+let expanded = null;
+
+function el(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  Object.assign(node, props);
+  for (const c of children) node.append(c);
+  return node;
+}
+
+// ---- API wrapper: every call is recorded for the Debug tab ----
+async function apiFetch(method, path, rawBody) {
+  const entry = {
+    ts: new Date(), method, path, requestBody: rawBody ?? null,
+    status: null, latencyMs: null, responseBody: null, errorCode: null, clientError: null,
+  };
+  const started = performance.now();
+  try {
+    const init = { method, headers: {} };
+    if (rawBody !== undefined) {
+      init.headers["content-type"] = "application/json";
+      init.body = typeof rawBody === "string" ? rawBody : JSON.stringify(rawBody);
+    }
+    const res = await fetch(path, init);
+    entry.status = res.status;
+    const text = await res.text();
+    try { entry.responseBody = JSON.parse(text); } catch { entry.responseBody = text; }
+    if (!res.ok) {
+      const b = entry.responseBody;
+      entry.errorCode = b && typeof b === "object" && b.code ? b.code : `http_${res.status}`;
+    }
+  } catch (err) {
+    entry.clientError = String(err);
+    entry.errorCode = "network_error";
+  } finally {
+    entry.latencyMs = Math.round(performance.now() - started);
+    log.unshift(entry);
+    if (log.length > LOG_LIMIT) log.pop();
+    renderLog();
+  }
+  return entry;
+}
+
+// ---- tabs ----
+function selectTab(name) {
+  for (const t of ["ask", "debug"]) {
+    $(`tab-${t}`).setAttribute("aria-selected", String(t === name));
+    $(`panel-${t}`).hidden = t !== name;
+  }
+}
+$("tab-ask").addEventListener("click", () => selectTab("ask"));
+$("tab-debug").addEventListener("click", () => selectTab("debug"));
+
+// ---- health ----
+async function checkHealth() {
+  const entry = await apiFetch("GET", "/health");
+  const up = entry.status === 200;
+  const box = $("health");
+  box.className = up ? "up" : "down";
+  box.title = `last check ${entry.ts.toLocaleTimeString()}`;
+  box.lastElementChild.textContent = up ? "API up" : "API down";
+}
+$("ping").addEventListener("click", checkHealth);
+checkHealth();
+setInterval(checkHealth, 10000);
+
+// ---- recent questions (localStorage is optional) ----
+function loadRecent() {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY)) ?? []; } catch { return []; }
+}
+function saveRecent(question) {
+  const next = [question, ...loadRecent().filter((q) => q !== question)].slice(0, 10);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* storage unavailable: UI still works */ }
+  renderRecent(next);
+}
+function renderRecent(items = loadRecent()) {
+  $("recent-card").hidden = items.length === 0;
+  $("recent").replaceChildren(...items.map((q) =>
+    el("li", {}, el("button", { type: "button", textContent: q, onclick: () => { $("question").value = q; updateCounter(); ask(); } }))));
+}
+
+// ---- Ask tab ----
+function updateCounter() { $("counter").textContent = `${$("question").value.length} / 500`; }
+$("question").addEventListener("input", updateCounter);
+$("question").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("ask-form").requestSubmit(); }
+});
+$("chips").replaceChildren(...EXAMPLES.map((q) =>
+  el("button", { type: "button", className: "chip", textContent: q, onclick: () => { $("question").value = q; updateCounter(); $("question").focus(); } })));
+
+function isNumeric(v) { return typeof v === "number" || (typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v)); }
+
+function renderResult(body) {
+  const frag = el("div", { className: "card" });
+  if (body.truncated) frag.append(el("div", { className: "banner", textContent: "Result truncated: showing the first rows only." }));
+  const head = el("tr", {}, ...body.columns.map((c) => el("th", { textContent: c })));
+  const rows = body.rows.map((r) => el("tr", {}, ...r.map((v) =>
+    el("td", { className: isNumeric(v) ? "num" : "", textContent: v === null ? "—" : String(v) }))));
+  frag.append(
+    el("div", { className: "muted", textContent: `${body.rows.length} row(s)` }),
+    el("div", { className: "table-wrap" }, el("table", {}, el("thead", {}, head), el("tbody", {}, ...rows))),
+    sqlBlock(body.sql, true),
+  );
+  $("result").replaceChildren(frag);
+}
+
+function sqlBlock(sql, open) {
+  const copy = el("button", { type: "button", className: "secondary", textContent: "Copy SQL" });
+  copy.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(sql); copy.textContent = "Copied"; } catch { copy.textContent = "Copy failed"; }
+    setTimeout(() => { copy.textContent = "Copy SQL"; }, 1500);
+  });
+  const d = el("details", {}, el("summary", { textContent: "Generated SQL" }), el("pre", { textContent: sql }), el("div", { className: "row" }, copy));
+  d.open = open;
+  return d;
+}
+
+function describeError(entry) {
+  const b = entry.responseBody;
+  if (entry.clientError) return { title: "API unreachable", message: entry.clientError };
+  if (entry.status === 422 && b && Array.isArray(b.detail)) {
+    return { title: "422 invalid request", message: b.detail.map((d) => d.msg).join("; ") };
+  }
+  if (b && typeof b === "object" && b.code) return { title: `${entry.status} ${b.code}`, message: b.message, sql: b.sql };
+  return { title: `HTTP ${entry.status}`, message: typeof b === "string" ? b : JSON.stringify(b) };
+}
+
+function renderError(entry) {
+  const e = describeError(entry);
+  const card = el("div", { className: "card error" }, el("h3", { textContent: e.title }), el("div", { textContent: e.message }));
+  if (e.sql) card.append(el("div", { className: "muted", textContent: "Rejected SQL:" }), el("pre", { textContent: e.sql }));
+  $("result").replaceChildren(card);
+}
+
+async function ask() {
+  const question = $("question").value.trim();
+  if (!question) return;
+  $("ask-actions").classList.add("busy");
+  $("submit").disabled = true;
+  try {
+    const entry = await apiFetch("POST", "/query", { question });
+    if (entry.status === 200) { renderResult(entry.responseBody); saveRecent(question); } else renderError(entry);
+  } finally {
+    $("ask-actions").classList.remove("busy");
+    $("submit").disabled = false;
+  }
+}
+$("ask-form").addEventListener("submit", (e) => { e.preventDefault(); ask(); });
+
+// ---- Debug tab ----
+const pretty = (v) => (typeof v === "string" ? v : JSON.stringify(v, null, 2));
+
+function renderLog() {
+  const errors = log.filter((e) => e.errorCode).length;
+  $("err-badge").textContent = errors;
+  $("err-badge").hidden = errors === 0;
+
+  const shown = $("errors-only").checked ? log.filter((e) => e.errorCode) : log;
+  $("log-count").textContent = `${shown.length} of ${log.length} request(s)`;
+  $("log-empty").hidden = shown.length > 0;
+
+  const rows = [];
+  for (const e of shown) {
+    const tr = el("tr", { className: "log-row" },
+      el("td", { textContent: e.ts.toLocaleTimeString() }),
+      el("td", { textContent: `${e.method} ${e.path}` }),
+      el("td", { className: e.errorCode ? "s-err" : "s-ok", textContent: e.status ?? "—" }),
+      el("td", { textContent: e.latencyMs }),
+      el("td", { textContent: e.errorCode ?? "" }));
+    tr.addEventListener("click", () => { expanded = expanded === e ? null : e; renderLog(); });
+    rows.push(tr);
+    if (expanded === e) {
+      const cell = el("td", { colSpan: 5 }, el("div", { className: "detail-grid" },
+        el("div", {}, el("div", { className: "muted", textContent: "Request body" }), el("pre", { textContent: e.requestBody === null ? "(none)" : pretty(e.requestBody) })),
+        el("div", {}, el("div", { className: "muted", textContent: e.clientError ? "Client error" : "Response body" }), el("pre", { textContent: e.clientError ?? pretty(e.responseBody) }))));
+      rows.push(el("tr", {}, cell));
+    }
+  }
+  $("log-body").replaceChildren(...rows);
+}
+$("errors-only").addEventListener("change", renderLog);
+$("clear").addEventListener("click", () => { log.length = 0; expanded = null; renderLog(); });
+$("export").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(log, null, 2)], { type: "application/json" });
+  const a = el("a", { href: URL.createObjectURL(blob), download: "request-log.json" });
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+$("raw-send").addEventListener("click", async () => {
+  const text = $("raw").value;
+  try {
+    JSON.parse(text);
+  } catch (err) {
+    log.unshift({
+      ts: new Date(), method: "POST", path: "/query", requestBody: text, status: null,
+      latencyMs: 0, responseBody: null, errorCode: "invalid_json_client", clientError: `Not sent: ${err.message}`,
+    });
+    renderLog();
+    return;
+  }
+  await apiFetch("POST", "/query", text);
+});
+
+renderRecent();
+renderLog();
+</script>
+</body>
+</html>
