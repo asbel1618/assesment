@@ -1,13 +1,3 @@
-from fastapi import FastAPI
+from app.api import create_app
 
-app = FastAPI(title="coding_assesment")
-
-
-@app.get("/")
-async def root() -> dict[str, str]:
-    return {"message": "Hello, World"}
-
-
-@app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+app = create_app()
