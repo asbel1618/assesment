@@ -30,7 +30,6 @@ from scripts.load_orders import load_clean_orders
 pytestmark = pytest.mark.integration
 
 PERMISSION_DENIED = "42501"
-READ_ONLY_TRANSACTION = "25006"
 
 
 def _sqlstate(exc: DBAPIError) -> str | None:
@@ -176,15 +175,20 @@ def test_loading_replaces_previous_contents(scratch_engine: Engine) -> None:
     assert _rows(scratch_engine, "SELECT count(*) FROM orders") == [(2,)]
 
 
-def test_repository_write_fails_in_read_only_transaction_even_without_validator(
-    loaded: Engine,
-) -> None:
-    repository = PostgresQueryRepository(loaded)  # owner role: only the txn protects us
+def test_repository_refuses_writes_even_without_validator(loaded: Engine) -> None:
+    repository = PostgresQueryRepository(
+        loaded
+    )  # owner role: only the repository protects us
 
-    with pytest.raises(QueryFailedError) as exc:
-        repository.run_select("DELETE FROM orders")
+    # The server-side cursor (DECLARE ... CURSOR FOR <sql>) only accepts SELECT, and
+    # SET TRANSACTION READ ONLY backs it up; a data-modifying CTE is refused too.
+    for sql in (
+        "DELETE FROM orders",
+        "WITH d AS (DELETE FROM orders RETURNING *) SELECT * FROM d",
+    ):
+        with pytest.raises(QueryFailedError):
+            repository.run_select(sql)
 
-    assert READ_ONLY_TRANSACTION in exc.value.reason
     assert _rows(loaded, "SELECT count(*) FROM orders") == [(len(FIXTURE_ROWS),)]
 
 
@@ -206,6 +210,19 @@ def test_repository_caps_rows_and_flags_truncation(
 
     assert len(result.rows) == min(count, MAX_ROWS)
     assert result.truncated is truncated
+
+
+def test_repository_streams_instead_of_buffering_the_whole_result(
+    loaded: Engine,
+) -> None:
+    # ~10M rows would take far longer than the timeout to buffer client-side;
+    # a server-side cursor returns after fetching only MAX_ROWS + 1.
+    result = PostgresQueryRepository(loaded).run_select(
+        "SELECT g FROM generate_series(1, 10000000) AS g"
+    )
+
+    assert len(result.rows) == MAX_ROWS
+    assert result.truncated is True
 
 
 def test_repository_passes_percent_and_colon_literals_through(loaded: Engine) -> None:

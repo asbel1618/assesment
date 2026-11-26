@@ -58,7 +58,12 @@ class PostgresQueryRepository:
                 )
                 # exec_driver_sql, not text(): ":word" in the SQL must not become a bind.
                 # psycopg still reads "%" as a placeholder start, so escape it.
-                result = conn.exec_driver_sql(sql.replace("%", "%%"))
+                # stream_results: server-side cursor, so only the rows fetched below
+                # reach this process (a client-side cursor buffers the whole result).
+                result = conn.exec_driver_sql(
+                    sql.replace("%", "%%"),
+                    execution_options={"stream_results": True},
+                )
                 fetched = result.fetchmany(MAX_ROWS + 1)
                 columns = list(result.keys())
         except DBAPIError as exc:
