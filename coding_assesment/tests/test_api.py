@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from httpx import Response
 
 from app.api import create_app
-from app.db.repository import (
+from app.db.ports import (
     DatabaseUnavailableError,
     QueryExecutionError,
     QueryFailedError,

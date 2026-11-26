@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from app.db.repository import QueryFailedError, QueryRepository
+from app.db.ports import QueryFailedError, QueryRepository
 from app.llm.base import LLMClient
 from app.schemas import Cell
 from app.validator import InvalidSQLError, validate_sql

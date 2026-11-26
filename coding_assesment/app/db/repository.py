@@ -1,15 +1,20 @@
-"""Query execution as the read-only role. The only module that runs LLM-derived SQL."""
+"""Postgres adapter for the query port: runs LLM-derived SQL as the read-only role."""
 
 import math
-from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Protocol
 
 from sqlalchemy import Engine
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 
 from app.db.connection import create_engine_from_env
+from app.db.ports import (
+    DatabaseUnavailableError,
+    QueryExecutionError,
+    QueryFailedError,
+    QueryResult,
+    QueryTimeoutError,
+)
 from app.schemas import Cell
 
 MAX_ROWS = 1000
@@ -20,33 +25,6 @@ _QUERY_CANCELED = "57014"
 _OUTAGE_CLASSES = ("08", "53", "57")
 # The allowlisted objects are missing or unreadable: a deployment problem.
 _SETUP_SQLSTATES = ("42P01", "42501")
-
-
-class QueryExecutionError(Exception):
-    """Base for execution failures; ``reason`` is safe to show to API callers."""
-
-    def __init__(self, reason: str) -> None:
-        super().__init__(reason)
-        self.reason = reason
-
-
-class QueryFailedError(QueryExecutionError):
-    """PostgreSQL rejected the statement (unknown column, bad cast, ...)."""
-
-
-class QueryTimeoutError(QueryExecutionError):
-    """The statement exceeded the statement timeout."""
-
-
-class DatabaseUnavailableError(QueryExecutionError):
-    """The database could not be reached."""
-
-
-@dataclass(frozen=True)
-class QueryResult:
-    columns: list[str]
-    rows: list[list[Cell]]
-    truncated: bool
 
 
 def to_cell(value: object) -> Cell:
@@ -64,12 +42,6 @@ def to_cell(value: object) -> Cell:
     if isinstance(value, bytes):
         return "\\x" + value.hex()
     return str(value)
-
-
-class QueryRepository(Protocol):
-    def run_select(self, sql: str) -> QueryResult:
-        """Execute validated ``sql``; raises ``QueryExecutionError``."""
-        ...
 
 
 class PostgresQueryRepository:

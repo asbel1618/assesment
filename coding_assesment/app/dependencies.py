@@ -5,7 +5,8 @@ from typing import Annotated
 
 from fastapi import Depends
 
-from app.db.repository import QueryRepository, create_query_repository_from_env
+from app.db.ports import QueryRepository
+from app.db.repository import create_query_repository_from_env
 from app.llm.base import LLMClient
 from app.llm.client import create_llm_client_from_env
 from app.services.query_service import QueryService

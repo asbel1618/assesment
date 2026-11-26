@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
-from app.db.repository import (
+from app.db.ports import (
     DatabaseUnavailableError,
     QueryExecutionError,
     QueryTimeoutError,

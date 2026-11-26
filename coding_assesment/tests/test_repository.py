@@ -6,14 +6,13 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.exc import DBAPIError, OperationalError
 
-from app.db.repository import (
+from app.db.ports import (
     DatabaseUnavailableError,
     QueryExecutionError,
     QueryFailedError,
     QueryTimeoutError,
-    _map_error,
-    to_cell,
 )
+from app.db.repository import _map_error, to_cell
 
 
 class FakeDriverError(Exception):
