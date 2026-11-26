@@ -1,5 +1,8 @@
 """Repository mapping and cell normalization. Hermetic: no database."""
 
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+
 import pytest
 from sqlalchemy.exc import DBAPIError, OperationalError
 
@@ -9,6 +12,7 @@ from app.db.repository import (
     QueryFailedError,
     QueryTimeoutError,
     _map_error,
+    to_cell,
 )
 
 
@@ -55,3 +59,39 @@ def test_missing_objects_and_privileges_are_not_blamed_on_the_sql(
 
     assert type(error) is QueryExecutionError
     assert sqlstate in error.reason
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        True,
+        7,
+        1.5,
+        "text",
+        Decimal("8084.52"),
+        date(2025, 3, 31),
+        datetime(2025, 3, 31, 12, 0),
+    ],
+)
+def test_supported_cells_pass_through_unchanged(value: object) -> None:
+    assert to_cell(value) is value
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (float("nan"), "NaN"),
+        (float("inf"), "Infinity"),
+        (float("-inf"), "-Infinity"),
+        (Decimal("NaN"), "NaN"),
+        (Decimal("Infinity"), "Infinity"),
+        (timedelta(days=3), "3 days, 0:00:00"),
+        (["a", "b"], "['a', 'b']"),
+        (b"\x01\xff", "\\x01ff"),
+    ],
+)
+def test_unrepresentable_cells_become_text_not_null_or_error(
+    value: object, expected: str
+) -> None:
+    assert to_cell(value) == expected

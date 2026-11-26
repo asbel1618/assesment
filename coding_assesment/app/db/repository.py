@@ -1,6 +1,9 @@
 """Query execution as the read-only role. The only module that runs LLM-derived SQL."""
 
+import math
 from dataclasses import dataclass
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Protocol
 
 from sqlalchemy import Engine
@@ -46,6 +49,23 @@ class QueryResult:
     truncated: bool
 
 
+def to_cell(value: object) -> Cell:
+    """Make a driver value representable as a ``Cell``.
+
+    Anything the response schema cannot carry (arrays, intervals, bytes) or that
+    JSON would silently turn into null (NaN, Infinity) becomes text.
+    """
+    if value is None or isinstance(value, str | bool | int | date | datetime):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else str(Decimal(value))
+    if isinstance(value, Decimal):
+        return value if value.is_finite() else str(value)
+    if isinstance(value, bytes):
+        return "\\x" + value.hex()
+    return str(value)
+
+
 class QueryRepository(Protocol):
     def run_select(self, sql: str) -> QueryResult:
         """Execute validated ``sql``; raises ``QueryExecutionError``."""
@@ -73,7 +93,7 @@ class PostgresQueryRepository:
             raise _map_error(exc) from exc
         return QueryResult(
             columns=columns,
-            rows=[list(row) for row in fetched[:MAX_ROWS]],
+            rows=[[to_cell(v) for v in row] for row in fetched[:MAX_ROWS]],
             truncated=len(fetched) > MAX_ROWS,
         )
 
