@@ -15,6 +15,12 @@ CREATE ROLE app_ro LOGIN PASSWORD :'ro_password';
 -- Session defaults: read-only transactions and a bounded statement time.
 ALTER ROLE app_ro SET default_transaction_read_only = on;
 ALTER ROLE app_ro SET statement_timeout = '5s';
+-- Resource caps for LLM-generated queries: sort/hash memory per node, spilled
+-- temp-file disk per session, abandoned transactions, and concurrent sessions.
+ALTER ROLE app_ro SET work_mem = '16MB';
+ALTER ROLE app_ro SET temp_file_limit = '256MB';
+ALTER ROLE app_ro SET idle_in_transaction_session_timeout = '10s';
+ALTER ROLE app_ro CONNECTION LIMIT 20;
 
 -- Drops the implicit PUBLIC grants (incl. TEMP, which would allow temp tables).
 REVOKE ALL ON DATABASE :"db" FROM PUBLIC;
