@@ -1,5 +1,5 @@
-# CPU-only override for hosts without an Intel GPU (/dev/dri).
-# docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d --build
+# CPU-only override of docker-compose-local-llm.yaml for hosts without an Intel GPU (/dev/dri).
+# docker compose -f docker-compose-local-llm.yaml -f docker-compose.cpu.yml up -d --build
 # Not exercised on the dev host (Intel GPU); only the rendered config is verified.
 services:
   llm:

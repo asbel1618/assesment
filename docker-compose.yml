@@ -1,45 +1,6 @@
 name: test
 
 services:
-  llm:
-    # Host-specific values are overridable via .env (see .env.example); defaults match the dev host.
-    image: ${LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-intel}
-    restart: unless-stopped
-    devices:
-      - /dev/dri:/dev/dri
-    group_add:
-      - "${RENDER_GID:-987}" # render (host GID)
-      - "${VIDEO_GID:-983}" # video (host GID)
-    volumes:
-      - ${MODEL_DIR:-/home/asbel/models}:/models:ro
-    ports:
-      - "127.0.0.1:8080:8080" # host access only; other services use http://llm:8080
-    entrypoint: ["/app/llama-server"]
-    command:
-      - -m
-      - /models/${LLM_MODEL_FILE:-Qwen3.5-9B-UD-Q4_K_XL.gguf}
-      - --jinja
-      - -ngl
-      - "99"
-      - -c
-      - "16384"
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8080"
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 20
-      start_period: 120s # model load from local disk
-    deploy:
-      resources:
-        limits:
-          memory: 12g
-    networks:
-      - backend
-
   db:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -72,13 +33,17 @@ services:
     # Explicit environment (no env_file): the host-style URLs in .env must not leak in.
     # The API only gets the read-only role; owner credentials stay in `loader`.
     environment:
-      LLM_BASE_URL: http://llm:8080/v1
+      # Any OpenAI-compatible endpoint (hosted, or your own); set in .env.
+      LLM_BASE_URL: ${LLM_BASE_URL:?set LLM_BASE_URL in .env}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_DISABLE_THINKING: ${LLM_DISABLE_THINKING:-}
       READONLY_DATABASE_URL: postgresql+psycopg://app_ro:${APP_RO_PASSWORD:?set APP_RO_PASSWORD in .env}@db:5432/${POSTGRES_DB:-orders}
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # reach an LLM server running on the host (Linux)
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
-      llm:
-        condition: service_healthy
       db:
         condition: service_healthy
     healthcheck:
